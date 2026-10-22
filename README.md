@@ -74,4 +74,4 @@ Well-scoped issues, failure reproductions, test cases, and corrections to archit
 
 ## License
 
-No license has been selected yet. Public visibility does not by itself grant permission to reuse or modify the code. A suitable license will be added before releasing reusable implementations.
+Released under the [MIT License](LICENSE). The experiments are teaching material: unsafe baselines are deliberately unsafe and intended for local use only.

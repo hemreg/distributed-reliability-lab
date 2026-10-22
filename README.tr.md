@@ -74,4 +74,4 @@ Küçük kapsamlı pull request'ler, arıza tekrar üretimleri, test senaryolar�
 
 ## Lisans
 
-Henüz lisans seçilmedi. Depo public olsa da bu durum tek başına kodun yeniden kullanımına veya değiştirilmesine izin vermez. Yeniden kullanılabilir uygulamaları yayımlamadan önce uygun bir lisans eklenecek.
+[MIT Lisansı](LICENSE) ile yayımlanmıştır. Deneyler eğitim amaçlıdır: güvensiz başlangıç örnekleri bilerek güvensizdir ve yalnızca yerel deney için kullanılmalıdır.

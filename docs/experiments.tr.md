@@ -1,6 +1,6 @@
 # Deney tanımları
 
-Bunlar **planlanan**, henüz tamamlanmamış deneylerdir. Her deney temiz bir Docker Compose ortamından yeniden üretilebilmeli; açık arıza tetikleyicileri, ilişkilendirme kimlikleri ve doğrulama koşulları içermelidir.
+**E01 geliştirildi ve çalıştırılabilir durumda** (bkz. [experiments/transactional-outbox](../experiments/transactional-outbox/README.tr.md)). **E02 ve E03 planlanan**, henüz geliştirilmemiş deneylerdir. Her deney temiz bir Docker Compose ortamından yeniden üretilebilmeli; açık arıza tetikleyicileri, ilişkilendirme kimlikleri ve doğrulama koşulları içermelidir.
 
 ## E01 — Lost Event
 
@@ -13,6 +13,8 @@ Bunlar **planlanan**, henüz tamamlanmamış deneylerdir. Her deney temiz bir Do
 **Önlem:** İş emriyle değiştirilemez outbox olayını aynı veritabanı transaction'ında kaydet. Bekleyen olayları worker yayımlasın.
 
 **Kabul ölçütleri:** (a) Commit edilmiş her iş emri için kalıcı bir outbox kaydı bulunmalı; (b) broker yeniden erişilebilir olunca bekleyen kayıtlar yeniden başlatma sonrası yayımlanabilmeli; (c) rollback edilen iş emri için commit edilmiş outbox olayı bulunmamalı. **Exactly-once** garantisi iddia edilmemeli.
+
+**Uygulama:** [experiments/transactional-outbox](../experiments/transactional-outbox/README.tr.md). Çalıştırmak için `./experiments/transactional-outbox/run-e01.sh`, test etmek için `./experiments/transactional-outbox/test-e01.sh`.
 
 ## E02 — Duplicate Delivery
 

@@ -1,6 +1,6 @@
 # Experiment specifications
 
-These are **planned**, not completed, experiments. Each must be reproducible from a clean Docker Compose environment with explicit failure toggles, traceable correlation IDs, and assertions.
+**E01 is implemented and runnable** (see [experiments/transactional-outbox](../experiments/transactional-outbox/README.md)). **E02 and E03 are planned**, not yet implemented. Each must be reproducible from a clean Docker Compose environment with explicit failure toggles, traceable correlation IDs, and assertions.
 
 ## E01 — Lost Event
 
@@ -13,6 +13,8 @@ These are **planned**, not completed, experiments. Each must be reproducible fro
 **Mitigation:** Persist the work order and an immutable outbox event in the same database transaction. A worker publishes pending events.
 
 **Acceptance:** (a) Every committed work order has a corresponding durable outbox entry; (b) a restart eventually publishes pending entries when broker connectivity is restored; (c) a rolled-back work order creates no committed outbox event. Do **not** imply exactly-once delivery.
+
+**Implementation:** [experiments/transactional-outbox](../experiments/transactional-outbox/README.md). Run it with `./experiments/transactional-outbox/run-e01.sh` and test it with `./experiments/transactional-outbox/test-e01.sh`.
 
 ## E02 — Duplicate Delivery
 

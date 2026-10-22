@@ -1,0 +1,48 @@
+# E01 Lost Event. Run from the repository root or this directory:
+#   docker compose -f experiments/transactional-outbox/compose.yaml ...
+# The dedicated project name keeps containers/volumes separate from other local stacks.
+name: drlab-e01
+
+include:
+  - ../../infrastructure/compose.yaml
+
+services:
+  workorders:
+    build:
+      context: .
+      target: runtime
+    image: drlab-e01-workorders:local
+    # tini as PID 1, so the injected SIGKILL reaches the dotnet process
+    # (the kernel ignores signals a PID 1 process sends to itself).
+    init: true
+    restart: "no"
+    environment:
+      # Required, no default: the app refuses to start unless this is 'naive' or 'outbox'.
+      E01_MODE: ${E01_MODE:-}
+      E01_OUTBOX_PUBLISHER_ENABLED: ${E01_OUTBOX_PUBLISHER_ENABLED:-true}
+      # LOCAL LAB ONLY: honours the X-Fault-Inject request header.
+      E01_FAULT_INJECTION_ENABLED: "true"
+      E01_POSTGRES: Host=postgres;Database=lab;Username=lab;Password=lab
+      E01_RABBITMQ_URI: amqp://lab:lab@rabbitmq:5672/
+    ports:
+      - "127.0.0.1:${DRLAB_E01_API_PORT:-18480}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      # Deliberately no dependency on rabbitmq: in outbox mode the API must keep
+      # accepting writes while the broker is down.
+
+  tests:
+    profiles: [test]
+    build:
+      context: .
+      target: test
+    image: drlab-e01-tests:local
+    environment:
+      E01_TEST_POSTGRES_ADMIN: Host=postgres;Database=postgres;Username=lab;Password=lab
+      E01_TEST_RABBITMQ_URI: amqp://lab:lab@rabbitmq:5672/
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy

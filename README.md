@@ -6,7 +6,7 @@
 
 This repository accompanies the *Reliability in Distributed Systems* article series at [emregorgulu.com](https://emregorgulu.com). The objective is not to promote a stack: it is to reproduce failures, observe their consequences, and evaluate architectural countermeasures.
 
-> **Project status:** Design and experiment specifications. Runnable demonstrations have not yet been implemented.
+> **Project status:** E01 (Lost Event) is runnable. Its scripted experiment and automated tests have been executed; see [experiments/transactional-outbox](experiments/transactional-outbox/README.md). E02 and E03 are specified but not yet implemented.
 
 ## Research questions
 
@@ -15,17 +15,17 @@ This repository accompanies the *Reliability in Distributed Systems* article ser
 - What guarantees can an idempotent consumer provide—and where do those guarantees end?
 - When do retries aid recovery, and when do they amplify an outage?
 
-## Planned experiments
+## Experiments
 
-| Scenario | Failure injection | Objective |
-| --- | --- | --- |
-| **Lost Event** | Crash after database commit, before broker publish | Compare naïve dual-write with transactional outbox |
-| **Duplicate Delivery** | Crash after broker ack, before outbox status update | Observe at-least-once publication and consumer deduplication |
-| **Retry Storm** | Induce overload, latency and transient errors | Compare immediate retries with bounded backoff and jitter |
+| Scenario | Failure injection | Objective | Status |
+| --- | --- | --- | --- |
+| **E01 Lost Event** | Crash after database commit, before broker publish | Compare naïve dual-write with transactional outbox | [Runnable](experiments/transactional-outbox/README.md) |
+| **E02 Duplicate Delivery** | Crash after broker ack, before outbox status update | Observe at-least-once publication and consumer deduplication | Planned |
+| **E03 Retry Storm** | Induce overload, latency and transient errors | Compare immediate retries with bounded backoff and jitter | Planned |
 
 Read the [experiment specifications](docs/experiments.md) for invariants and acceptance criteria.
 
-## Proposed stack
+## Stack
 
 - **.NET** for API and workers
 - **PostgreSQL** for transactional state and outbox
@@ -35,15 +35,14 @@ Read the [experiment specifications](docs/experiments.md) for invariants and acc
 
 The stack is an implementation choice, not the subject of the research. Reliability principles should remain technology-independent.
 
-## Planned layout
+## Layout
 
 ```text
 distributed-reliability-lab/
 ├── experiments/
-│   ├── idempotency/
-│   ├── transactional-outbox/
-│   └── retry-resilience/
+│   └── transactional-outbox/   # E01 Lost Event: .NET service, scripted run, xUnit tests
 ├── infrastructure/
+│   └── compose.yaml            # shared PostgreSQL + RabbitMQ for local experiments
 ├── docs/
 │   ├── experiments.md
 │   └── experiments.tr.md
@@ -51,7 +50,7 @@ distributed-reliability-lab/
 └── README.tr.md
 ```
 
-Experiment and infrastructure directories will be introduced with runnable code rather than empty placeholders.
+`experiments/idempotency/` and `experiments/retry-resilience/` are planned. Like the existing directories, they will be added together with runnable code, not as empty placeholders.
 
 ## Principles
 

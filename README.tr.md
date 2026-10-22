@@ -6,7 +6,7 @@
 
 Bu depo, [emregorgulu.com](https://emregorgulu.com) üzerindeki *Dağıtık Sistemlerde Güvenilirlik* yazı dizisinin uygulama alanıdır. Amaç belirli bir teknoloji yığınını savunmak değil; arızaları yeniden üretmek, sonuçlarını gözlemlemek ve mimari önlemleri karşılaştırmaktır.
 
-> **Proje durumu:** Mimari çerçeve ve deney tanımları hazır. Çalıştırılabilir uygulamalar henüz geliştirilmedi.
+> **Proje durumu:** E01 (Lost Event) çalıştırılabilir durumda. Deney betiği ve otomatik testleri çalıştırıldı; ayrıntılar için [experiments/transactional-outbox](experiments/transactional-outbox/README.tr.md). E02 ve E03 tanımlandı ancak henüz geliştirilmedi.
 
 ## Yanıt aradığımız sorular
 
@@ -15,17 +15,17 @@ Bu depo, [emregorgulu.com](https://emregorgulu.com) üzerindeki *Dağıtık Sist
 - İdempotent tüketici hangi güvenceyi sağlayabilir; bu güvencenin sınırı nerededir?
 - Retry ne zaman toparlanmayı kolaylaştırır, ne zaman kesintiyi büyütür?
 
-## Planlanan deneyler
+## Deneyler
 
-| Senaryo | Enjekte edilen arıza | Amaç |
-| --- | --- | --- |
-| **Lost Event** | Veritabanı commit'inden sonra, broker yayımından önce çökme | Naif çift yazma ile transactional outbox'ı karşılaştırmak |
-| **Duplicate Delivery** | Broker onayından sonra, outbox durum güncellemesinden önce çökme | En az bir kez yayımı ve tüketici deduplikasyonunu gözlemlemek |
-| **Retry Storm** | Gecikme, geçici hata ve aşırı yük oluşturma | Anlık tekrarlarla sınırlı backoff ve jitter stratejilerini karşılaştırmak |
+| Senaryo | Enjekte edilen arıza | Amaç | Durum |
+| --- | --- | --- | --- |
+| **E01 Lost Event** | Veritabanı commit'inden sonra, broker yayımından önce çökme | Naif çift yazma ile transactional outbox'ı karşılaştırmak | [Çalıştırılabilir](experiments/transactional-outbox/README.tr.md) |
+| **E02 Duplicate Delivery** | Broker onayından sonra, outbox durum güncellemesinden önce çökme | En az bir kez yayımı ve tüketici deduplikasyonunu gözlemlemek | Planlandı |
+| **E03 Retry Storm** | Gecikme, geçici hata ve aşırı yük oluşturma | Anlık tekrarlarla sınırlı backoff ve jitter stratejilerini karşılaştırmak | Planlandı |
 
 Arıza noktaları, değişmezler ve kabul ölçütleri için [deney tanımlarına](docs/experiments.tr.md) bakabilirsiniz.
 
-## Önerilen teknoloji yığını
+## Teknoloji yığını
 
 - **.NET:** API ve arka plan worker süreçleri
 - **PostgreSQL:** İş verisi ve outbox için transaction desteği
@@ -35,15 +35,14 @@ Arıza noktaları, değişmezler ve kabul ölçütleri için [deney tanımların
 
 Bunlar yalnızca uygulama tercihleridir. İncelediğimiz güvenilirlik ilkeleri teknolojiden bağımsızdır.
 
-## Planlanan yapı
+## Klasör yapısı
 
 ```text
 distributed-reliability-lab/
 ├── experiments/
-│   ├── idempotency/
-│   ├── transactional-outbox/
-│   └── retry-resilience/
+│   └── transactional-outbox/   # E01 Lost Event: .NET servisi, deney betiği, xUnit testleri
 ├── infrastructure/
+│   └── compose.yaml            # yerel deneyler için ortak PostgreSQL + RabbitMQ
 ├── docs/
 │   ├── experiments.md
 │   └── experiments.tr.md
@@ -51,7 +50,7 @@ distributed-reliability-lab/
 └── README.tr.md
 ```
 
-Deney ve altyapı klasörlerini boş iskeletler olarak değil, ilgili çalıştırılabilir kodlarla birlikte ekleyeceğiz.
+`experiments/idempotency/` ve `experiments/retry-resilience/` planlanıyor. Mevcut klasörler gibi bunları da boş iskeletler olarak değil, çalıştırılabilir kodlarıyla birlikte ekleyeceğiz.
 
 ## Yaklaşımımız
 

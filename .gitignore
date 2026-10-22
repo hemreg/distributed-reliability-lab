@@ -1,0 +1,14 @@
+# macOS
+.DS_Store
+
+# .NET build output
+bin/
+obj/
+*.user
+
+# Local environment
+.env
+
+# Test and experiment artefacts
+TestResults/
+artifacts/

@@ -25,6 +25,17 @@ Bu depo, [emregorgulu.com](https://emregorgulu.com) üzerindeki *Dağıtık Sist
 
 Arıza noktaları, değişmezler ve kabul ölçütleri için [deney tanımlarına](docs/experiments.tr.md) bakabilirsiniz.
 
+### Bir deneyi çalıştırmak
+
+Çalıştırılabilir her deney kendi klasöründen tek komutla başlar; yalnızca Docker (Compose v2) gerekir:
+
+```bash
+cd experiments/transactional-outbox
+docker compose up --build
+```
+
+Gönderilecek istekler, enjekte edilecek arıza ve sonucun nasıl okunacağı deneyin README dosyasında adım adım anlatılıyor.
+
 ## Teknoloji yığını
 
 - **.NET:** API ve arka plan worker süreçleri

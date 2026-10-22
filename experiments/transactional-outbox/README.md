@@ -17,11 +17,62 @@ The experiment compares two write paths in the same small `WorkOrders` service:
 
 The mode is set with `E01_MODE` and has no default. The service refuses to start without it.
 
+## Quick start (one command)
+
+Requires Docker with Compose v2. From this directory:
+
+```bash
+docker compose up --build
+```
+
+This starts PostgreSQL, RabbitMQ and **both** write paths side by side:
+
+| URL | Service | Mode |
+| --- | --- | --- |
+| http://localhost:18481 | `outbox-api` | transactional outbox (mitigation) |
+| http://localhost:18482 | `naive-api` | dual write (**unsafe** baseline) |
+| http://localhost:15682 | RabbitMQ management (user `lab`, password `lab`) | queue `e01.work-order-created` holds the published events |
+
+Create a work order on each API:
+
+```bash
+curl -X POST localhost:18481/work-orders -H 'X-Operation-Id: outbox-ok'
+curl -X POST localhost:18482/work-orders -H 'X-Operation-Id: naive-ok'
+```
+
+Now kill each process right after `COMMIT` (local lab only; the request gets no response because the process dies):
+
+```bash
+curl -X POST localhost:18482/work-orders -H 'X-Operation-Id: naive-crash'  -H 'X-Fault-Inject: crash-after-commit'
+curl -X POST localhost:18481/work-orders -H 'X-Operation-Id: outbox-crash' -H 'X-Fault-Inject: crash-after-commit'
+```
+
+Both containers restart on their own (`restart: on-failure`), as an orchestrator would restart them. Compare the database with the broker:
+
+```bash
+docker compose exec postgres psql -U lab -d lab -c "
+  SELECT w.operation_id, w.write_mode,
+         CASE WHEN o.event_id IS NULL THEN '-' WHEN o.published_at IS NULL THEN 'pending' ELSE 'published' END AS outbox
+  FROM work_orders w LEFT JOIN outbox_messages o ON o.aggregate_id = w.id ORDER BY w.created_at;"
+
+docker compose exec rabbitmq rabbitmqctl -q list_queues name messages
+```
+
+Observed on 2026-10-22: four work orders are committed but the queue holds **three** events. The `naive-crash` event never existed; it was lost between `COMMIT` and publish. After its restart, `outbox-api` found `outbox-crash` still pending and published it within about half a second. To see which operations reached the broker, open the queue in the management UI and use *Get messages* (the `operation_id` is in each message).
+
+Stop and remove everything, including data:
+
+```bash
+docker compose down -v
+```
+
+The scripted experiment and the automated tests below cover the same ground more rigorously (broker outage, rollback, assertions).
+
 ## Layout
 
 ```text
 experiments/transactional-outbox/
-├── compose.yaml              # project "drlab-e01": includes ../../infrastructure, adds workorders + tests
+├── compose.yaml              # project "drlab-e01": `docker compose up` → outbox-api + naive-api; script/test profiles
 ├── Dockerfile                # build / test / runtime stages (.NET SDK only inside Docker)
 ├── run-e01.sh                # scripted experiment A → B → C, prints evidence, tears down
 ├── test-e01.sh               # runs the xUnit suite in Docker, tears down

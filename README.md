@@ -25,6 +25,17 @@ This repository accompanies the *Reliability in Distributed Systems* article ser
 
 Read the [experiment specifications](docs/experiments.md) for invariants and acceptance criteria.
 
+### Try an experiment
+
+Each runnable experiment starts with a single command from its own directory; only Docker (Compose v2) is needed:
+
+```bash
+cd experiments/transactional-outbox
+docker compose up --build
+```
+
+The experiment's README walks through the requests to send, the failure to inject and how to read the result.
+
 ## Stack
 
 - **.NET** for API and workers

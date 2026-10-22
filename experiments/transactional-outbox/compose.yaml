@@ -1,13 +1,67 @@
-# E01 Lost Event. Run from the repository root or this directory:
-#   docker compose -f experiments/transactional-outbox/compose.yaml ...
+# E01 Lost Event.
+#
+#   docker compose up --build        # from this directory: the whole example in one command
+#
+# starts PostgreSQL, RabbitMQ (management UI on http://localhost:15682, lab/lab) and two APIs:
+#   http://localhost:18481  outbox-api  transactional outbox (mitigation)
+#   http://localhost:18482  naive-api   dual write (UNSAFE baseline)
+# See README.md for curl examples, including the injected crash after COMMIT.
+#
+# The scripted experiment (run-e01.sh) and the tests (test-e01.sh) use the profiled
+# services below; they start from a clean environment on their own.
 # The dedicated project name keeps containers/volumes separate from other local stacks.
 name: drlab-e01
 
 include:
   - ../../infrastructure/compose.yaml
 
+x-workorders: &workorders
+  build:
+    context: .
+    target: runtime
+  image: drlab-e01-workorders:local
+  # tini as PID 1, so the injected SIGKILL reaches the dotnet process.
+  init: true
+  depends_on:
+    postgres:
+      condition: service_healthy
+
+x-workorders-env: &workorders-env
+  # LOCAL LAB ONLY: honours the X-Fault-Inject request header.
+  E01_FAULT_INJECTION_ENABLED: "true"
+  E01_POSTGRES: Host=postgres;Database=lab;Username=lab;Password=lab
+  E01_RABBITMQ_URI: amqp://lab:lab@rabbitmq:5672/
+
 services:
+  # ---- Interactive demo (default `docker compose up`) --------------------------------------
+  # Both restart after the injected crash, like a real orchestrator would: the outbox API then
+  # publishes what is still pending; the naive API has nothing left to publish -> lost event.
+  outbox-api:
+    <<: *workorders
+    restart: on-failure
+    environment:
+      <<: *workorders-env
+      E01_MODE: outbox
+    ports:
+      - "127.0.0.1:${DRLAB_E01_OUTBOX_PORT:-18481}:8080"
+
+  naive-api:
+    <<: *workorders
+    restart: on-failure
+    environment:
+      <<: *workorders-env
+      E01_MODE: naive
+    ports:
+      - "127.0.0.1:${DRLAB_E01_NAIVE_PORT:-18482}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  # ---- Scripted experiment (run-e01.sh) ---------------------------------------------------
   workorders:
+    profiles: [script]
     build:
       context: .
       target: runtime

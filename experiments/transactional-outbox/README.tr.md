@@ -17,11 +17,62 @@ Deney, aynı küçük `WorkOrders` servisindeki iki yazma yolunu karşılaştır
 
 Mod `E01_MODE` ile seçilir ve varsayılan değeri yoktur. Servis bu değişken olmadan başlamayı reddeder.
 
+## Hızlı başlangıç (tek komut)
+
+Docker ve Compose v2 yeterli. Bu klasörde:
+
+```bash
+docker compose up --build
+```
+
+Bu komut PostgreSQL'i, RabbitMQ'yu ve **iki** yazma yöntemini yan yana başlatır:
+
+| Adres | Servis | Yöntem |
+| --- | --- | --- |
+| http://localhost:18481 | `outbox-api` | transactional outbox (önlem) |
+| http://localhost:18482 | `naive-api` | çift yazma (**güvensiz** başlangıç) |
+| http://localhost:15682 | RabbitMQ yönetim arayüzü (kullanıcı `lab`, şifre `lab`) | yayımlanan olaylar `e01.work-order-created` kuyruğunda |
+
+Her iki API'de bir iş emri oluşturun:
+
+```bash
+curl -X POST localhost:18481/work-orders -H 'X-Operation-Id: outbox-ok'
+curl -X POST localhost:18482/work-orders -H 'X-Operation-Id: naive-ok'
+```
+
+Şimdi her iki süreci `COMMIT`'ten hemen sonra sonlandırın (yalnızca yerel deney; süreç öldüğü için istek yanıt almaz):
+
+```bash
+curl -X POST localhost:18482/work-orders -H 'X-Operation-Id: naive-crash'  -H 'X-Fault-Inject: crash-after-commit'
+curl -X POST localhost:18481/work-orders -H 'X-Operation-Id: outbox-crash' -H 'X-Fault-Inject: crash-after-commit'
+```
+
+İki container da, bir orkestratörün yapacağı gibi kendiliğinden yeniden başlar (`restart: on-failure`). Veritabanını broker ile karşılaştırın:
+
+```bash
+docker compose exec postgres psql -U lab -d lab -c "
+  SELECT w.operation_id, w.write_mode,
+         CASE WHEN o.event_id IS NULL THEN '-' WHEN o.published_at IS NULL THEN 'pending' ELSE 'published' END AS outbox
+  FROM work_orders w LEFT JOIN outbox_messages o ON o.aggregate_id = w.id ORDER BY w.created_at;"
+
+docker compose exec rabbitmq rabbitmqctl -q list_queues name messages
+```
+
+22 Ekim 2026'da gözlemlenen: dört iş emri commit edildi, ancak kuyrukta **üç** olay var. `naive-crash` olayı hiç oluşmadı; `COMMIT` ile yayım arasında kayboldu. `outbox-api` ise yeniden başladıktan sonra `outbox-crash` kaydını hâlâ bekler durumda buldu ve yaklaşık yarım saniye içinde yayımladı. Hangi işlemlerin broker'a ulaştığını görmek için yönetim arayüzünde kuyruğu açıp *Get messages* kullanın (her mesajda `operation_id` bulunur).
+
+Her şeyi verilerle birlikte durdurup silmek için:
+
+```bash
+docker compose down -v
+```
+
+Aşağıdaki deney betiği ve otomatik testler aynı konuyu daha kapsamlı ele alır (broker kesintisi, rollback, doğrulamalar).
+
 ## Klasör yapısı
 
 ```text
 experiments/transactional-outbox/
-├── compose.yaml              # "drlab-e01" projesi: ../../infrastructure'ı dahil eder, workorders + tests ekler
+├── compose.yaml              # "drlab-e01" projesi: `docker compose up` → outbox-api + naive-api; script/test profilleri
 ├── Dockerfile                # build / test / runtime aşamaları (.NET SDK yalnızca Docker içinde)
 ├── run-e01.sh                # A → B → C deney betiği; kanıtları yazdırır, ortamı kaldırır
 ├── test-e01.sh               # xUnit paketini Docker içinde çalıştırır, ortamı kaldırır

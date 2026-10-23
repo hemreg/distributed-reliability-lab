@@ -1,6 +1,6 @@
 # Deney tanımları
 
-**E01 ve E03 geliştirildi ve çalıştırılabilir durumda** (bkz. [experiments/transactional-outbox](../experiments/transactional-outbox/README.tr.md) ve [experiments/retry-resilience](../experiments/retry-resilience/README.tr.md)). **E02 planlanan**, henüz geliştirilmemiş bir deneydir. Her deney temiz bir Docker Compose ortamından yeniden üretilebilmeli; açık arıza tetikleyicileri, ilişkilendirme kimlikleri ve doğrulama koşulları içermelidir.
+**E01, E02 ve E03 geliştirildi ve çalıştırılabilir durumda** (bkz. [experiments/transactional-outbox](../experiments/transactional-outbox/README.tr.md), [experiments/idempotency](../experiments/idempotency/README.tr.md) ve [experiments/retry-resilience](../experiments/retry-resilience/README.tr.md)). Her deney temiz bir Docker Compose ortamından yeniden üretilebilmeli; açık arıza tetikleyicileri, ilişkilendirme kimlikleri ve doğrulama koşulları içermelidir.
 
 ## E01 — Lost Event
 
@@ -26,6 +26,8 @@
 
 **Kabul ölçütü:** Broker'da birden fazla teslimat olabilir; tüketicinin veritabanındaki iş etkisi aynı olay için bir kez oluşmalı. Transaction dışındaki etkiler için ayrı güvenlik mekanizmaları gerektiği belirtilmeli.
 
+**Uygulama:** [experiments/idempotency](../experiments/idempotency/README.tr.md). Başlatmak için `cd experiments/idempotency && docker compose up --build`, deney betiği için `./experiments/idempotency/run-e02.sh` (27 kontrol), test etmek için `./experiments/idempotency/test-e02.sh` (12 test). İş etkisi bir yedek parça rezervasyonudur: her `WorkOrderCreated` bir conta kiti rezerve eder ve o tüketicinin stoğunu bir azaltır. İki çökme noktası gerçek süreç sonlandırmasıyla enjekte edilir: outbox worker, publisher confirm'ünden sonra ve kaydı yayımlandı olarak işaretlemeden önce; bir tüketici, `COMMIT`'inden sonra ve ack'inden önce. Naif bir tüketici (güvensiz başlangıç) ve idempotent bir tüketici (rezervasyon ve stok güncellemesiyle aynı transaction içinde `ON CONFLICT DO NOTHING` ile eklenen, `PRIMARY KEY (consumer, event_id)` taşıyan `processed_messages`) aynı teslimatları yan yana alır. Gözlemlenen: tek bir olay kimliğinin broker'da iki kopyası, naif tüketiciden iki, idempotent tüketiciden bir rezervasyon, yeniden teslimden (`redelivered=true`) sonra da aynı sonuç ve worker ile iki tüketicinin yeniden başlatılmasından sonra hiçbir değişiklik. Kapsam dışı: dış yan etkiler, zehirli mesajlar, işlenen kimliklerin saklama süresi, yük altında eşzamanlı tüketici süreçleri (eşzamanlılık süreç içinde test edilir).
+
 ## E03 — Retry Storm
 
 **Başlangıç:** Sınırlı kapasitede çalışan, gecikmesi ve geçici hata oranı artırılabilen bir bağımlı servis oluştur. İstemciler hemen tekrar denesin.
@@ -49,4 +51,4 @@ Her deneyde ön koşullar, başlatma/durdurma komutları, arıza tetikleme nokta
 
 ## Uygulama sırası
 
-Önce E01, ardından aynı altyapıyla E02, son olarak E03. (E03 ortak altyapıya ihtiyaç duymadığı için E02'den önce geliştirildi.) Bilerek güvensiz örnekler açıkça işaretlenmeli ve yalnızca yerel deney için kullanılmalı.
+Önce E01, ardından aynı altyapıyla E02, son olarak E03. (E03 ortak altyapıya ihtiyaç duymadığı için E02'den önce geliştirildi.) Üçü de artık geliştirildi. Bilerek güvensiz örnekler açıkça işaretlenmeli ve yalnızca yerel deney için kullanılmalı.

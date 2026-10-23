@@ -1,0 +1,455 @@
+
+================================================================================
+E02 Duplicate Delivery  |  0. clean environment
+$ docker compose down -v && docker compose build && docker compose up -d --wait postgres rabbitmq
+     Network drlab-e02_default  Creating
+     Network drlab-e02_default  Created
+     Volume drlab-e02_rabbitmq-data  Creating
+     Volume drlab-e02_rabbitmq-data  Created
+     Volume drlab-e02_postgres-data  Creating
+     Volume drlab-e02_postgres-data  Created
+     Container drlab-e02-rabbitmq-1  Creating
+     Container drlab-e02-postgres-1  Creating
+     Container drlab-e02-rabbitmq-1  Created
+     Container drlab-e02-postgres-1  Created
+     Container drlab-e02-postgres-1  Starting
+     Container drlab-e02-rabbitmq-1  Starting
+     Container drlab-e02-rabbitmq-1  Started
+     Container drlab-e02-postgres-1  Started
+     Container drlab-e02-postgres-1  Waiting
+     Container drlab-e02-rabbitmq-1  Waiting
+     Container drlab-e02-postgres-1  Healthy
+     Container drlab-e02-rabbitmq-1  Healthy
+$ E02_RESTART_POLICY=no docker compose up -d workorders-api outbox-worker inventory-naive inventory-idempotent
+     Container drlab-e02-workorders-api-1  Creating
+     Container drlab-e02-outbox-worker-1  Creating
+     Container drlab-e02-inventory-naive-1  Creating
+     Container drlab-e02-inventory-idempotent-1  Creating
+     Container drlab-e02-inventory-naive-1  Created
+     Container drlab-e02-outbox-worker-1  Created
+     Container drlab-e02-workorders-api-1  Created
+     Container drlab-e02-inventory-idempotent-1  Created
+     Container drlab-e02-inventory-idempotent-1  Starting
+     Container drlab-e02-inventory-naive-1  Starting
+     Container drlab-e02-workorders-api-1  Starting
+     Container drlab-e02-outbox-worker-1  Starting
+     Container drlab-e02-inventory-naive-1  Started
+     Container drlab-e02-inventory-idempotent-1  Started
+     Container drlab-e02-outbox-worker-1  Started
+     Container drlab-e02-workorders-api-1  Started
+$ curl http://127.0.0.1:18501/health
+    {"status":"ok","role":"api","fault_injection_enabled":true}
+$ curl http://127.0.0.1:18502/health
+    {"status":"ok","role":"outbox-worker","fault_injection_enabled":true}
+$ curl http://127.0.0.1:18503/health
+    {"status":"ok","consumer":"naive","mode":"naive","queue":"e02.inventory.naive","instance":"f192841f","fault_injection_enabled":true}
+$ curl http://127.0.0.1:18504/health
+    {"status":"ok","consumer":"idempotent","mode":"idempotent","queue":"e02.inventory.idempotent","instance":"e8120831","fault_injection_enabled":true}
+
+--- 0.1 Business state BEFORE: each consumer has its own stock of seal kits; nothing reserved
+$ psql: SELECT consumer, part_no, initial_on_hand, on_hand, initial_on_hand - on_hand AS units_taken FROM stock_levels ORDER BY consumer 
+  consumer  | part_no | initial_on_hand | on_hand | units_taken 
+------------+---------+-----------------+---------+-------------
+ idempotent | SK-101  |              10 |      10 |           0
+ naive      | SK-101  |              10 |      10 |           0
+(2 rows)
+
+$ psql: SELECT consumer, count(*) AS reservations FROM part_reservations GROUP BY consumer 
+ consumer | reservations 
+----------+--------------
+(0 rows)
+
+
+================================================================================
+(a) REPRODUCE THE FAILURE: duplicate publication and redelivery; naive consumer (UNSAFE baseline)
+Both consumers run side by side, each on its own queue, and receive the same deliveries.
+Section (a) shows the broker and the naive consumer; section (b) shows the idempotent consumer.
+
+--- A1. Control: one work order, published once, processed once
+$ curl -X POST http://127.0.0.1:18501/work-orders -H 'X-Operation-Id: op-ok'
+    {"work_order_id":"01a166fa-7383-73d4-b794-cda6700db6b1","event_id":"01a166fa-7383-702a-83cc-eedbbaf8ac2a","operation_id":"op-ok","part_no":"SK-101","quantity":1,"event_status":"pending"}
+    HTTP 201
+$ management API: POST /api/queues/%2F/e02.work-order-created.audit/get (ackmode ack_requeue_true: peek, messages stay)
+    audit queue e02.work-order-created.audit: 1 message(s) in total
+      message_id=01a166fa-7383-702a-83cc-eedbbaf8ac2a  operation_id=op-ok  work_order_id=01a166fa-7383-73d4-b794-cda6700db6b1
+$ psql: SELECT operation_id, event_id, reservation_id, part_no, quantity, reserved_at FROM part_reservations WHERE consumer = 'naive' AND operation_id = 'op-ok' ORDER BY reserved_at 
+ operation_id |               event_id               |            reservation_id            | part_no | quantity |         reserved_at          
+--------------+--------------------------------------+--------------------------------------+---------+----------+------------------------------
+ op-ok        | 01a166fa-7383-702a-83cc-eedbbaf8ac2a | 01a166fa-7549-77f2-91c0-ff504b7e23dc | SK-101  |        1 | 2026-10-23 04:17:32.48956+00
+(1 row)
+
+
+--- A2. A publisher confirm is not processing: consumers stopped, the worker gets its confirm anyway
+$ docker compose stop inventory-naive inventory-idempotent
+     Container drlab-e02-inventory-naive-1  Stopping
+     Container drlab-e02-inventory-idempotent-1  Stopping
+     Container drlab-e02-inventory-idempotent-1  Stopped
+     Container drlab-e02-inventory-naive-1  Stopped
+$ curl -X POST http://127.0.0.1:18501/work-orders -H 'X-Operation-Id: op-confirm-only'
+    {"work_order_id":"01a166fa-7d5c-7ecb-8418-dd0caee4d52a","event_id":"01a166fa-7d5c-742b-a869-9f43d762b959","operation_id":"op-confirm-only","part_no":"SK-101","quantity":1,"event_status":"pending"}
+    HTTP 201
+$ psql: SELECT operation_id, event_id, published_at FROM outbox_messages WHERE operation_id = 'op-confirm-only' 
+  operation_id   |               event_id               |         published_at          
+-----------------+--------------------------------------+-------------------------------
+ op-confirm-only | 01a166fa-7d5c-742b-a869-9f43d762b959 | 2026-10-23 04:17:35.012801+00
+(1 row)
+
+$ docker compose logs outbox-worker | jq 'select(.phase)' (operation_id=op-confirm-only)
+    04:17:35.016  info     publish_confirmed        op-confirm-only   01a166fa-7d5c...  
+    04:17:35.017  info     outbox_marked_published  -                 -                 count=1
+$ rabbitmqctl list_queues name messages_ready messages_unacknowledged
+    name                             messages_ready  messages_unacknowledged
+    e02.inventory.idempotent         1               0
+    e02.work-order-created.audit     2               0
+    e02.inventory.naive              1               0
+$ psql: SELECT consumer, count(*) AS reservations FROM part_reservations WHERE operation_id = 'op-confirm-only' GROUP BY consumer 
+ consumer | reservations 
+----------+--------------
+(0 rows)
+
+The worker holds a confirm and marked the row published; no consumer has done anything yet.
+$ docker compose start inventory-naive inventory-idempotent
+     Container drlab-e02-inventory-naive-1  Starting
+     Container drlab-e02-inventory-idempotent-1  Starting
+     Container drlab-e02-inventory-naive-1  Started
+     Container drlab-e02-inventory-idempotent-1  Started
+
+--- A3. Outbox worker killed AFTER the broker confirm, BEFORE marking the outbox row published
+$ curl -X POST 'http://127.0.0.1:18502/faults/crash-after-publish-confirm?operation_id=op-dup'
+    {"armed":"crash-after-publish-confirm","operation_id":"op-dup"}
+    HTTP 202
+$ curl -X POST http://127.0.0.1:18501/work-orders -H 'X-Operation-Id: op-dup'
+    {"work_order_id":"01a166fa-8ebc-7513-b0df-814bc52398e2","event_id":"01a166fa-8ebc-7e48-99c7-f68a32f5b602","operation_id":"op-dup","part_no":"SK-101","quantity":1,"event_status":"pending"}
+    HTTP 201
+    outbox-worker: exited (exit code 137)
+
+--- A3.1 Evidence BEFORE the worker restarts
+$ psql: SELECT operation_id, event_id, published_at FROM outbox_messages WHERE operation_id = 'op-dup' 
+ operation_id |               event_id               | published_at 
+--------------+--------------------------------------+--------------
+ op-dup       | 01a166fa-8ebc-7e48-99c7-f68a32f5b602 | 
+(1 row)
+
+$ docker compose logs outbox-worker | jq 'select(.phase)' (operation_id=op-dup)
+    04:17:38.992  warn     fault_armed              op-dup            -                 fault=crash-after-publish-confirm
+    04:17:39.045  info     publish_confirmed        op-dup            01a166fa-8ebc...  
+    04:17:39.046  warn     fault_injected           op-dup            01a166fa-8ebc...  fault=crash-after-publish-confirm
+    04:17:39.046  critical process_killed           op-dup            01a166fa-8ebc...  fault=crash-after-publish-confirm
+publish_confirmed, then the kill: no outbox_marked_published for this event.
+$ management API: POST /api/queues/%2F/e02.work-order-created.audit/get (ackmode ack_requeue_true: peek, messages stay)
+    audit queue e02.work-order-created.audit: 3 message(s) in total
+      message_id=01a166fa-8ebc-7e48-99c7-f68a32f5b602  operation_id=op-dup  work_order_id=01a166fa-8ebc-7513-b0df-814bc52398e2
+$ psql: SELECT operation_id, event_id, reservation_id, part_no, quantity, reserved_at FROM part_reservations WHERE consumer = 'naive' AND operation_id = 'op-dup' ORDER BY reserved_at 
+ operation_id |               event_id               |            reservation_id            | part_no | quantity |          reserved_at          
+--------------+--------------------------------------+--------------------------------------+---------+----------+-------------------------------
+ op-dup       | 01a166fa-8ebc-7e48-99c7-f68a32f5b602 | 01a166fa-8ee7-74b7-b465-81fb4577a24d | SK-101  |        1 | 2026-10-23 04:17:39.047567+00
+(1 row)
+
+
+--- A3.2 Restart the outbox worker: the row is still pending, so it is published again
+$ docker compose start outbox-worker
+     Container drlab-e02-outbox-worker-1  Starting
+     Container drlab-e02-outbox-worker-1  Started
+
+--- A3.3 Evidence AFTER the restart: two copies of one event_id at the broker
+$ psql: SELECT operation_id, event_id, published_at FROM outbox_messages WHERE operation_id = 'op-dup' 
+ operation_id |               event_id               |         published_at          
+--------------+--------------------------------------+-------------------------------
+ op-dup       | 01a166fa-8ebc-7e48-99c7-f68a32f5b602 | 2026-10-23 04:17:41.983685+00
+(1 row)
+
+$ docker compose logs outbox-worker | jq 'select(.phase)' (operation_id=op-dup)
+    04:17:38.992  warn     fault_armed              op-dup            -                 fault=crash-after-publish-confirm
+    04:17:39.045  info     publish_confirmed        op-dup            01a166fa-8ebc...  
+    04:17:39.046  warn     fault_injected           op-dup            01a166fa-8ebc...  fault=crash-after-publish-confirm
+    04:17:39.046  critical process_killed           op-dup            01a166fa-8ebc...  fault=crash-after-publish-confirm
+    04:17:42.015  info     broker_connected         op-dup            01a166fa-8ebc...  
+    04:17:42.019  info     publish_confirmed        op-dup            01a166fa-8ebc...  
+    04:17:42.040  info     outbox_marked_published  -                 -                 count=1
+$ management API: POST /api/queues/%2F/e02.work-order-created.audit/get (ackmode ack_requeue_true: peek, messages stay)
+    audit queue e02.work-order-created.audit: 4 message(s) in total
+      message_id=01a166fa-8ebc-7e48-99c7-f68a32f5b602  operation_id=op-dup  work_order_id=01a166fa-8ebc-7513-b0df-814bc52398e2
+      message_id=01a166fa-8ebc-7e48-99c7-f68a32f5b602  operation_id=op-dup  work_order_id=01a166fa-8ebc-7513-b0df-814bc52398e2
+Two copies with the same message_id (= outbox event_id). To the broker they are two separate messages.
+$ psql: SELECT operation_id, event_id, instance, delivery_tag, redelivered, received_at FROM consumer_deliveries WHERE consumer = 'naive' AND operation_id = 'op-dup' ORDER BY id 
+ operation_id |               event_id               | instance | delivery_tag | redelivered |          received_at          
+--------------+--------------------------------------+----------+--------------+-------------+-------------------------------
+ op-dup       | 01a166fa-8ebc-7e48-99c7-f68a32f5b602 | 2543b0c7 |            2 | f           | 2026-10-23 04:17:39.046261+00
+ op-dup       | 01a166fa-8ebc-7e48-99c7-f68a32f5b602 | 2543b0c7 |            3 | f           | 2026-10-23 04:17:42.018685+00
+(2 rows)
+
+Both deliveries have redelivered=false: the redelivered flag cannot reveal a publisher-side duplicate.
+$ psql: SELECT operation_id, event_id, reservation_id, part_no, quantity, reserved_at FROM part_reservations WHERE consumer = 'naive' AND operation_id = 'op-dup' ORDER BY reserved_at 
+ operation_id |               event_id               |            reservation_id            | part_no | quantity |          reserved_at          
+--------------+--------------------------------------+--------------------------------------+---------+----------+-------------------------------
+ op-dup       | 01a166fa-8ebc-7e48-99c7-f68a32f5b602 | 01a166fa-8ee7-74b7-b465-81fb4577a24d | SK-101  |        1 | 2026-10-23 04:17:39.047567+00
+ op-dup       | 01a166fa-8ebc-7e48-99c7-f68a32f5b602 | 01a166fa-9a83-738d-82a5-cac237b60053 | SK-101  |        1 | 2026-10-23 04:17:42.01944+00
+(2 rows)
+
+$ psql: SELECT consumer, part_no, initial_on_hand, on_hand, initial_on_hand - on_hand AS units_taken FROM stock_levels ORDER BY consumer 
+  consumer  | part_no | initial_on_hand | on_hand | units_taken 
+------------+---------+-----------------+---------+-------------
+ idempotent | SK-101  |              10 |       7 |           3
+ naive      | SK-101  |              10 |       6 |           4
+(2 rows)
+
+
+--- A4. Consumers killed AFTER their transaction committed, BEFORE basic.ack
+$ curl -X POST 'http://127.0.0.1:18503/faults/crash-after-commit-before-ack?operation_id=op-ack'
+    {"armed":"crash-after-commit-before-ack","consumer":"naive","operation_id":"op-ack"}
+    HTTP 202
+$ curl -X POST 'http://127.0.0.1:18504/faults/crash-after-commit-before-ack?operation_id=op-ack'
+    {"armed":"crash-after-commit-before-ack","consumer":"idempotent","operation_id":"op-ack"}
+    HTTP 202
+$ curl -X POST http://127.0.0.1:18501/work-orders -H 'X-Operation-Id: op-ack'
+    {"work_order_id":"01a166fa-a40f-78b5-a3d0-55dad0d52962","event_id":"01a166fa-a40f-7693-900c-53292ec798be","operation_id":"op-ack","part_no":"SK-101","quantity":1,"event_status":"pending"}
+    HTTP 201
+    inventory-naive: exited (exit code 137)
+    inventory-idempotent: exited (exit code 137)
+
+--- A4.1 Evidence BEFORE the consumers restart
+$ docker compose logs inventory-naive | jq 'select(.phase)' (operation_id=op-ack)
+    04:17:44.439  warn     fault_armed              op-ack            -                 fault=crash-after-commit-before-ack
+    04:17:44.551  info     delivery_received        op-ack            01a166fa-a40f...  redelivered=false
+    04:17:44.552  info     effect_committed         op-ack            01a166fa-a40f...  redelivered=false on_hand_after=5
+    04:17:44.552  warn     fault_injected           op-ack            01a166fa-a40f...  fault=crash-after-commit-before-ack redelivered=false
+    04:17:44.553  critical process_killed           op-ack            01a166fa-a40f...  fault=crash-after-commit-before-ack redelivered=false
+effect_committed, then the kill: no acked line. The broker requeued the unacked message:
+$ rabbitmqctl list_queues name messages_ready messages_unacknowledged
+    name                             messages_ready  messages_unacknowledged
+    e02.inventory.idempotent         1               0
+    e02.work-order-created.audit     5               0
+    e02.inventory.naive              1               0
+$ psql: SELECT operation_id, event_id, reservation_id, part_no, quantity, reserved_at FROM part_reservations WHERE consumer = 'naive' AND operation_id = 'op-ack' ORDER BY reserved_at 
+ operation_id |               event_id               |            reservation_id            | part_no | quantity |          reserved_at          
+--------------+--------------------------------------+--------------------------------------+---------+----------+-------------------------------
+ op-ack       | 01a166fa-a40f-7693-900c-53292ec798be | 01a166fa-a467-70f2-ac05-b782b4ceab12 | SK-101  |        1 | 2026-10-23 04:17:44.551698+00
+(1 row)
+
+
+--- A4.2 Restart both consumers: the broker delivers the same message again
+$ docker compose start inventory-naive inventory-idempotent
+     Container drlab-e02-inventory-naive-1  Starting
+     Container drlab-e02-inventory-idempotent-1  Starting
+     Container drlab-e02-inventory-idempotent-1  Started
+     Container drlab-e02-inventory-naive-1  Started
+$ psql: SELECT operation_id, event_id, instance, delivery_tag, redelivered, received_at FROM consumer_deliveries WHERE consumer = 'naive' AND operation_id = 'op-ack' ORDER BY id 
+ operation_id |               event_id               | instance | delivery_tag | redelivered |          received_at          
+--------------+--------------------------------------+----------+--------------+-------------+-------------------------------
+ op-ack       | 01a166fa-a40f-7693-900c-53292ec798be | 2543b0c7 |            4 | f           | 2026-10-23 04:17:44.550851+00
+ op-ack       | 01a166fa-a40f-7693-900c-53292ec798be | 30dc7458 |            1 | t           | 2026-10-23 04:17:47.319393+00
+(2 rows)
+
+The second delivery comes from another process instance with redelivered=true.
+$ docker compose logs inventory-naive | jq 'select(.phase)' (operation_id=op-ack)
+    04:17:44.439  warn     fault_armed              op-ack            -                 fault=crash-after-commit-before-ack
+    04:17:44.551  info     delivery_received        op-ack            01a166fa-a40f...  redelivered=false
+    04:17:44.552  info     effect_committed         op-ack            01a166fa-a40f...  redelivered=false on_hand_after=5
+    04:17:44.552  warn     fault_injected           op-ack            01a166fa-a40f...  fault=crash-after-commit-before-ack redelivered=false
+    04:17:44.553  critical process_killed           op-ack            01a166fa-a40f...  fault=crash-after-commit-before-ack redelivered=false
+    04:17:47.320  info     delivery_received        op-ack            01a166fa-a40f...  redelivered=true
+    04:17:47.325  info     effect_committed         op-ack            01a166fa-a40f...  redelivered=true on_hand_after=4
+    04:17:47.325  info     acked                    op-ack            01a166fa-a40f...  redelivered=true
+$ psql: SELECT operation_id, event_id, reservation_id, part_no, quantity, reserved_at FROM part_reservations WHERE consumer = 'naive' AND operation_id = 'op-ack' ORDER BY reserved_at 
+ operation_id |               event_id               |            reservation_id            | part_no | quantity |          reserved_at          
+--------------+--------------------------------------+--------------------------------------+---------+----------+-------------------------------
+ op-ack       | 01a166fa-a40f-7693-900c-53292ec798be | 01a166fa-a467-70f2-ac05-b782b4ceab12 | SK-101  |        1 | 2026-10-23 04:17:44.551698+00
+ op-ack       | 01a166fa-a40f-7693-900c-53292ec798be | 01a166fa-af39-797b-aefd-df36dff4f7a5 | SK-101  |        1 | 2026-10-23 04:17:47.321206+00
+(2 rows)
+
+$ management API: POST /api/queues/%2F/e02.work-order-created.audit/get (ackmode ack_requeue_true: peek, messages stay)
+    audit queue e02.work-order-created.audit: 5 message(s) in total
+      message_id=01a166fa-a40f-7693-900c-53292ec798be  operation_id=op-ack  work_order_id=01a166fa-a40f-78b5-a3d0-55dad0d52962
+
+--- A5. Naive consumer: business tables after A1-A4
+$ psql: SELECT o.operation_id, o.event_id, count(r.reservation_id) AS reservations, coalesce(sum(r.quantity), 0) AS units_reserved FROM outbox_messages o LEFT JOIN part_reservations r ON r.event_id = o.event_id AND r.consumer = 'naive' GROUP BY o.operation_id, o.event_id, o.created_at ORDER BY o.created_at 
+  operation_id   |               event_id               | reservations | units_reserved 
+-----------------+--------------------------------------+--------------+----------------
+ op-ok           | 01a166fa-7383-702a-83cc-eedbbaf8ac2a |            1 |              1
+ op-confirm-only | 01a166fa-7d5c-742b-a869-9f43d762b959 |            1 |              1
+ op-dup          | 01a166fa-8ebc-7e48-99c7-f68a32f5b602 |            2 |              2
+ op-ack          | 01a166fa-a40f-7693-900c-53292ec798be |            2 |              2
+(4 rows)
+
+$ psql: SELECT consumer, part_no, initial_on_hand, on_hand, initial_on_hand - on_hand AS units_taken FROM stock_levels ORDER BY consumer 
+  consumer  | part_no | initial_on_hand | on_hand | units_taken 
+------------+---------+-----------------+---------+-------------
+ idempotent | SK-101  |              10 |       6 |           4
+ naive      | SK-101  |              10 |       4 |           6
+(2 rows)
+
+Four work orders need four seal kits; the naive consumer took 6 off the shelf.
+
+================================================================================
+(b) APPLY THE MECHANISM: idempotent consumer, processed_messages + primary key in the same transaction
+    For every delivery, in ONE transaction:
+      INSERT INTO processed_messages (consumer, event_id) VALUES (...) ON CONFLICT (consumer, event_id) DO NOTHING
+        1 row  -> INSERT INTO part_reservations ...; UPDATE stock_levels SET on_hand = on_hand - 1 ...; COMMIT
+        0 rows -> already applied by this consumer: write nothing
+    then basic.ack (only after the transaction has ended).
+    It received exactly the deliveries the naive consumer received in A1-A4, on its own queue.
+
+--- B1. Deliveries received by the idempotent consumer
+$ psql: SELECT operation_id, event_id, instance, delivery_tag, redelivered, received_at FROM consumer_deliveries WHERE consumer = 'idempotent' ORDER BY id 
+  operation_id   |               event_id               | instance | delivery_tag | redelivered |          received_at          
+-----------------+--------------------------------------+----------+--------------+-------------+-------------------------------
+ op-ok           | 01a166fa-7383-702a-83cc-eedbbaf8ac2a | e8120831 |            1 | f           | 2026-10-23 04:17:32.486975+00
+ op-confirm-only | 01a166fa-7d5c-742b-a869-9f43d762b959 | 627228f7 |            1 | f           | 2026-10-23 04:17:37.806515+00
+ op-dup          | 01a166fa-8ebc-7e48-99c7-f68a32f5b602 | 627228f7 |            2 | f           | 2026-10-23 04:17:39.046055+00
+ op-dup          | 01a166fa-8ebc-7e48-99c7-f68a32f5b602 | 627228f7 |            3 | f           | 2026-10-23 04:17:42.018735+00
+ op-ack          | 01a166fa-a40f-7693-900c-53292ec798be | 627228f7 |            4 | f           | 2026-10-23 04:17:44.550853+00
+ op-ack          | 01a166fa-a40f-7693-900c-53292ec798be | 40b30208 |            1 | t           | 2026-10-23 04:17:47.317544+00
+(6 rows)
+
+
+--- B2. processed_messages: one row per event_id, enforced by PRIMARY KEY (consumer, event_id)
+$ psql: SELECT consumer, event_id, processed_at FROM processed_messages ORDER BY processed_at 
+  consumer  |               event_id               |         processed_at          
+------------+--------------------------------------+-------------------------------
+ idempotent | 01a166fa-7383-702a-83cc-eedbbaf8ac2a | 2026-10-23 04:17:32.489775+00
+ idempotent | 01a166fa-7d5c-742b-a869-9f43d762b959 | 2026-10-23 04:17:37.808254+00
+ idempotent | 01a166fa-8ebc-7e48-99c7-f68a32f5b602 | 2026-10-23 04:17:39.046995+00
+ idempotent | 01a166fa-a40f-7693-900c-53292ec798be | 2026-10-23 04:17:44.551753+00
+(4 rows)
+
+
+--- B3. Idempotent consumer: business tables after A1-A4
+$ psql: SELECT o.operation_id, o.event_id, count(r.reservation_id) AS reservations, coalesce(sum(r.quantity), 0) AS units_reserved FROM outbox_messages o LEFT JOIN part_reservations r ON r.event_id = o.event_id AND r.consumer = 'idempotent' GROUP BY o.operation_id, o.event_id, o.created_at ORDER BY o.created_at 
+  operation_id   |               event_id               | reservations | units_reserved 
+-----------------+--------------------------------------+--------------+----------------
+ op-ok           | 01a166fa-7383-702a-83cc-eedbbaf8ac2a |            1 |              1
+ op-confirm-only | 01a166fa-7d5c-742b-a869-9f43d762b959 |            1 |              1
+ op-dup          | 01a166fa-8ebc-7e48-99c7-f68a32f5b602 |            1 |              1
+ op-ack          | 01a166fa-a40f-7693-900c-53292ec798be |            1 |              1
+(4 rows)
+
+$ psql: SELECT consumer, part_no, initial_on_hand, on_hand, initial_on_hand - on_hand AS units_taken FROM stock_levels ORDER BY consumer 
+  consumer  | part_no | initial_on_hand | on_hand | units_taken 
+------------+---------+-----------------+---------+-------------
+ idempotent | SK-101  |              10 |       6 |           4
+ naive      | SK-101  |              10 |       4 |           6
+(2 rows)
+
+
+--- B4. Logs: the duplicates the primary key recognised
+$ docker compose logs inventory-idempotent | jq 'select(.phase == "duplicate_skipped")'
+    04:17:42.020  duplicate_skipped  op-dup  redelivered=false  (processed_messages PK conflict; nothing written)
+    04:17:47.320  duplicate_skipped  op-ack  redelivered=true  (processed_messages PK conflict; nothing written)
+
+================================================================================
+(c) VERIFY: restart the worker and both consumers, then measure again
+
+--- C1. Measurements before the restart
+    reservations naive=6 idempotent=4 | on_hand naive=4 idempotent=6 | processed_messages=4 | deliveries=12 | pending_outbox=0 | audit_copies=5 | queued naive=0 idempotent=0
+
+--- C2. Restart outbox worker and both consumers (graceful), wait 3 s (6 publisher polling cycles)
+$ docker compose restart outbox-worker inventory-naive inventory-idempotent
+     Container drlab-e02-inventory-idempotent-1  Restarting
+     Container drlab-e02-inventory-naive-1  Restarting
+     Container drlab-e02-outbox-worker-1  Restarting
+     Container drlab-e02-outbox-worker-1  Started
+     Container drlab-e02-inventory-idempotent-1  Started
+     Container drlab-e02-inventory-naive-1  Started
+
+--- C3. Measurements after the restart
+    reservations naive=6 idempotent=4 | on_hand naive=4 idempotent=6 | processed_messages=4 | deliveries=12 | pending_outbox=0 | audit_copies=5 | queued naive=0 idempotent=0
+$ rabbitmqctl list_queues name messages_ready messages_unacknowledged
+    name                             messages_ready  messages_unacknowledged
+    e02.inventory.idempotent         0               0
+    e02.work-order-created.audit     5               0
+    e02.inventory.naive              0               0
+
+--- C4. Side by side, per event_id: publishes at the broker, deliveries, business effects
+$ psql: per event_id: broker copies (audit queue) joined with consumer_deliveries and part_reservations
+  operation_id   | broker_copies | naive_deliveries  | naive_reservations | idempotent_deliveries | idempotent_reservations 
+-----------------+---------------+-------------------+--------------------+-----------------------+-------------------------
+ op-ok           |             1 | 1 (0 redelivered) |                  1 | 1 (0 redelivered)     |                       1
+ op-confirm-only |             1 | 1 (0 redelivered) |                  1 | 1 (0 redelivered)     |                       1
+ op-dup          |             2 | 2 (0 redelivered) |                  2 | 2 (0 redelivered)     |                       1
+ op-ack          |             1 | 2 (1 redelivered) |                  2 | 2 (1 redelivered)     |                       1
+(4 rows)
+
+
+--- C5. Final business state per consumer (correct: one reservation per work order, stock = initial - units needed)
+$ psql: per consumer: broker copies (audit queue), deliveries, reservations, stock; each next to its correct value
+  consumer  | work_orders | broker_copies |    deliveries     | reservations | correct_reservations | on_hand | correct_on_hand | difference 
+------------+-------------+---------------+-------------------+--------------+----------------------+---------+-----------------+------------
+ idempotent |           4 |             5 | 6 (1 redelivered) |            4 |                    4 |       6 |               6 |          0
+ naive      |           4 |             5 | 6 (1 redelivered) |            6 |                    4 |       4 |               6 |         -2
+(2 rows)
+
+
+================================================================================
+SUMMARY: expected vs observed
+1. The same event_id is published twice (crash after broker confirm, before marking)
+  OK   outbox-worker killed after the broker confirm (exit code)              expected=137 observed=137
+  OK   op-dup outbox row still pending after the crash                        expected=1 observed=1
+  OK   op-dup copies at the broker before the worker restart                  expected=1 observed=1
+  OK   op-dup copies at the broker after the restart (same event_id)          expected=2 observed=2
+  OK   op-dup publisher confirms logged by the worker                         expected=2 observed=2
+  OK   outbox rows pending after the restart                                  expected=0 observed=0
+  OK   op-dup deliveries to naive / idempotent, both redelivered=false        expected=2/2 observed=2/2
+   A publisher confirm is not processing
+  OK   op-confirm-only confirmed and marked published, consumers stopped      expected=1 observed=1
+  OK   op-confirm-only messages waiting in the consumer queues                expected=2 observed=2
+  OK   op-confirm-only reservations at that moment                            expected=0 observed=0
+2. Naive consumer (UNSAFE baseline): two business effects for one event_id
+  OK   op-ok control: copies at the broker / naive reservations               expected=1/1 observed=1/1
+  OK   op-dup naive reservations                                              expected=2 observed=2
+3. Idempotent consumer: one business effect for that event_id
+  OK   op-dup idempotent reservations                                         expected=1 observed=1
+4. Consumer killed after COMMIT, before ack: the broker redelivers
+  OK   inventory-naive killed after commit (exit code)                        expected=137 observed=137
+  OK   inventory-idempotent killed after commit (exit code)                   expected=137 observed=137
+  OK   op-ack copies at the broker (published once)                           expected=1 observed=1
+  OK   op-ack unacked message back in the queue: naive / idempotent           expected=1/1 observed=1/1
+  OK   op-ack deliveries with redelivered=true: naive / idempotent            expected=1/1 observed=1/1
+  OK   op-ack naive reservations (another effect)                             expected=2 observed=2
+  OK   op-ack idempotent reservations                                         expected=1 observed=1
+  OK   idempotent duplicate_skipped log lines (op-dup + op-ack)               expected=2 observed=2
+5. Restart of worker and consumers: no new effects, final state consistent
+  OK   C1 vs C3: every count unchanged by the restart                         expected=same observed=same
+  OK   idempotent: events without exactly one reservation                     expected=0 observed=0
+  OK   idempotent: published events without a reservation                     expected=0 observed=0
+  OK   naive: events reserved more than once                                  expected=2 observed=2
+  OK   idempotent: SK-101 on hand equals the correct stock (6)                expected=6 observed=6
+  OK   naive: SK-101 on hand, 2 below the correct stock (6)                   expected=4 observed=4
+
+Shown here: the transactional outbox gives at-least-once publication, not exactly-once processing.
+The idempotent consumer makes its DATABASE effect effectively-once within its own transaction;
+side effects outside that transaction (e-mail, HTTP calls, device commands) are not covered.
+
+27 of 27 checks OK.
+
+--- Teardown
+$ docker compose down -v
+     Container drlab-e02-inventory-idempotent-1  Stopping
+     Container drlab-e02-inventory-naive-1  Stopping
+     Container drlab-e02-outbox-worker-1  Stopping
+     Container drlab-e02-workorders-api-1  Stopping
+     Container drlab-e02-workorders-api-1  Stopped
+     Container drlab-e02-workorders-api-1  Removing
+     Container drlab-e02-workorders-api-1  Removed
+     Container drlab-e02-outbox-worker-1  Stopped
+     Container drlab-e02-outbox-worker-1  Removing
+     Container drlab-e02-outbox-worker-1  Removed
+     Container drlab-e02-inventory-idempotent-1  Stopped
+     Container drlab-e02-inventory-idempotent-1  Removing
+     Container drlab-e02-inventory-idempotent-1  Removed
+     Container drlab-e02-inventory-naive-1  Stopped
+     Container drlab-e02-inventory-naive-1  Removing
+     Container drlab-e02-inventory-naive-1  Removed
+     Container drlab-e02-postgres-1  Stopping
+     Container drlab-e02-rabbitmq-1  Stopping
+     Container drlab-e02-postgres-1  Stopped
+     Container drlab-e02-postgres-1  Removing
+     Container drlab-e02-postgres-1  Removed
+     Container drlab-e02-rabbitmq-1  Stopped
+     Container drlab-e02-rabbitmq-1  Removing
+     Container drlab-e02-rabbitmq-1  Removed
+     Volume drlab-e02_postgres-data  Removing
+     Volume drlab-e02_rabbitmq-data  Removing
+     Network drlab-e02_default  Removing
+     Volume drlab-e02_postgres-data  Removed
+     Volume drlab-e02_rabbitmq-data  Removed
+     Network drlab-e02_default  Removed

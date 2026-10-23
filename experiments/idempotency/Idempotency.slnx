@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Lab.Shared/Lab.Shared.csproj" />
+    <Project Path="src/WorkOrders/WorkOrders.csproj" />
+    <Project Path="src/Inventory/Inventory.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Idempotency.Tests/Idempotency.Tests.csproj" />
+  </Folder>
+</Solution>

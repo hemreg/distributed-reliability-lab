@@ -1,0 +1,105 @@
+# E02 Duplicate Delivery. LOCAL LAB ONLY.
+#
+# From this directory, the whole example in one command:
+#
+#   docker compose up --build
+#
+# starts PostgreSQL, RabbitMQ (management UI on http://localhost:15683, lab/lab) and four services:
+#   http://localhost:18501  workorders-api        POST /work-orders: work order + outbox row in one transaction
+#   http://localhost:18502  outbox-worker         publishes pending outbox rows with publisher confirms
+#   http://localhost:18503  inventory-naive       consumer, UNSAFE baseline: every delivery reserves a seal kit
+#   http://localhost:18504  inventory-idempotent  consumer with processed_messages in the same transaction
+# Both consumers receive every WorkOrderCreated event on their own queue, side by side.
+# See README.md for the curl commands that inject the two crashes.
+#
+# The scripted experiment (./run-e02.sh) uses the same services with automatic restarts turned
+# off (E02_RESTART_POLICY=no), so it can show the state between a crash and the restart; it then
+# restarts the crashed container itself. The tests (./test-e02.sh) use the `test` profile.
+# The dedicated project name keeps containers/volumes separate from E01, E03 and other stacks.
+name: drlab-e02
+
+include:
+  - path: ../../infrastructure/compose.yaml
+    # Moves the RabbitMQ management UI to 15683 so E01 (15682) and E02 can run at the same time.
+    env_file: ./infrastructure.env
+
+x-app: &app
+  build:
+    context: .
+    target: runtime
+  # tini as PID 1, so the injected SIGKILL reaches the dotnet process.
+  init: true
+  # Like an orchestrator: a crashed process (exit 137) is started again.
+  restart: ${E02_RESTART_POLICY:-on-failure}
+  depends_on:
+    postgres:
+      condition: service_healthy
+    rabbitmq:
+      condition: service_healthy
+
+x-app-env: &app-env
+  # LOCAL LAB ONLY: enables the POST /faults/... endpoints.
+  E02_FAULT_INJECTION_ENABLED: "true"
+  E02_POSTGRES: Host=postgres;Database=lab;Username=lab;Password=lab
+  E02_RABBITMQ_URI: amqp://lab:lab@rabbitmq:5672/
+
+services:
+  # One image tag per service: services that build the same Dockerfile under one tag race
+  # while building it in parallel ("image already exists").
+  workorders-api:
+    <<: *app
+    image: drlab-e02-workorders-api:local
+    entrypoint: ["dotnet", "/app/workorders/WorkOrders.dll"]
+    environment:
+      <<: *app-env
+      E02_ROLE: api
+    ports:
+      - "127.0.0.1:${DRLAB_E02_API_PORT:-18501}:8080"
+
+  outbox-worker:
+    <<: *app
+    image: drlab-e02-outbox-worker:local
+    entrypoint: ["dotnet", "/app/workorders/WorkOrders.dll"]
+    environment:
+      <<: *app-env
+      E02_ROLE: outbox-worker
+    ports:
+      - "127.0.0.1:${DRLAB_E02_WORKER_PORT:-18502}:8080"
+
+  inventory-naive:
+    <<: *app
+    image: drlab-e02-inventory-naive:local
+    entrypoint: ["dotnet", "/app/inventory/Inventory.dll"]
+    environment:
+      <<: *app-env
+      E02_CONSUMER_MODE: naive
+      E02_INITIAL_STOCK: ${E02_INITIAL_STOCK:-10}
+    ports:
+      - "127.0.0.1:${DRLAB_E02_NAIVE_PORT:-18503}:8080"
+
+  inventory-idempotent:
+    <<: *app
+    image: drlab-e02-inventory-idempotent:local
+    entrypoint: ["dotnet", "/app/inventory/Inventory.dll"]
+    environment:
+      <<: *app-env
+      E02_CONSUMER_MODE: idempotent
+      E02_INITIAL_STOCK: ${E02_INITIAL_STOCK:-10}
+    ports:
+      - "127.0.0.1:${DRLAB_E02_IDEMPOTENT_PORT:-18504}:8080"
+
+  # ---- Tests (./test-e02.sh) --------------------------------------------------------------
+  tests:
+    profiles: [test]
+    build:
+      context: .
+      target: test
+    image: drlab-e02-tests:local
+    environment:
+      E02_TEST_POSTGRES_ADMIN: Host=postgres;Database=postgres;Username=lab;Password=lab
+      E02_TEST_RABBITMQ_URI: amqp://lab:lab@rabbitmq:5672/
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy

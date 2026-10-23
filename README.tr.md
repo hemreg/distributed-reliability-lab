@@ -6,7 +6,7 @@
 
 Bu depo, [emregorgulu.com](https://emregorgulu.com) üzerindeki *Dağıtık Sistemlerde Güvenilirlik* yazı dizisinin uygulama alanıdır. Amaç belirli bir teknoloji yığınını savunmak değil; arızaları yeniden üretmek, sonuçlarını gözlemlemek ve mimari önlemleri karşılaştırmaktır.
 
-> **Proje durumu:** E01 (Lost Event) ve E03 (Retry Storm) çalıştırılabilir durumda. Deneyleri ve otomatik testleri çalıştırıldı; ayrıntılar için [experiments/transactional-outbox](experiments/transactional-outbox/README.tr.md) ve [experiments/retry-resilience](experiments/retry-resilience/README.tr.md). E02 tanımlandı ancak henüz geliştirilmedi.
+> **Proje durumu:** E01 (Lost Event), E02 (Duplicate Delivery) ve E03 (Retry Storm) çalıştırılabilir durumda. Deneyleri ve otomatik testleri çalıştırıldı; ayrıntılar için [experiments/transactional-outbox](experiments/transactional-outbox/README.tr.md), [experiments/idempotency](experiments/idempotency/README.tr.md) ve [experiments/retry-resilience](experiments/retry-resilience/README.tr.md).
 
 ## Araştırma soruları
 
@@ -20,7 +20,7 @@ Bu depo, [emregorgulu.com](https://emregorgulu.com) üzerindeki *Dağıtık Sist
 | Senaryo | Enjekte edilen arıza | Amaç | Durum |
 | --- | --- | --- | --- |
 | **E01 Lost Event** | Veritabanı commit'inden sonra, broker yayımından önce çökme | Naif çift yazma ile transactional outbox'ı karşılaştırmak | [Çalıştırılabilir](experiments/transactional-outbox/README.tr.md) |
-| **E02 Duplicate Delivery** | Broker onayından sonra, outbox durum güncellemesinden önce çökme | En az bir kez yayımı ve tüketici deduplikasyonunu gözlemlemek | Planlandı |
+| **E02 Duplicate Delivery** | Broker onayından sonra, outbox durum güncellemesinden önce çökme; tüketici commit'inden sonra, ack'ten önce çökme | En az bir kez yayımı ve iş verisine etkisini gözlemlemek; naif tüketiciyi idempotent tüketiciyle karşılaştırmak | [Çalıştırılabilir](experiments/idempotency/README.tr.md) |
 | **E03 Retry Storm** | E03-A: bir süre boyunca gecikme ve rastgele geçici hatalar; E03-B: çok sayıda istemciyi aynı anda hataya düşüren donma ve yeniden başlatma | Anında yeniden denemeyi sınırlı backoff, jitter ve retry bütçesiyle karşılaştırmak | [Çalıştırılabilir](experiments/retry-resilience/README.tr.md) |
 
 Arıza noktaları, değişmezler ve kabul ölçütleri için [deney tanımlarına](docs/experiments.tr.md) bakabilirsiniz.
@@ -34,12 +34,16 @@ Arıza noktaları, değişmezler ve kabul ölçütleri için [deney tanımların
 cd experiments/transactional-outbox
 docker compose up --build
 
+# E02: outbox worker'ı ve iki tüketiciyi başlatır; iki çökme adımını README anlatır
+cd experiments/idempotency
+docker compose up --build
+
 # E03: E03-A ve E03-B senaryolarını çalıştırır (~4-5 dk), tabloları yazdırır ve durur
 cd experiments/retry-resilience
 docker compose up --build
 ```
 
-Enjekte edilen arıza, neyin ölçüldüğü ve sonucun nasıl okunacağı her deneyin README dosyasında anlatılıyor. Temizlemek için `docker compose down` (E01'de verileri de silen `docker compose down -v`) kullanın.
+Enjekte edilen arıza, neyin ölçüldüğü ve sonucun nasıl okunacağı her deneyin README dosyasında anlatılıyor. Temizlemek için `docker compose down` (E01 ve E02'de verileri de silen `docker compose down -v`) kullanın. E02'nin ayrıca her sonucu kontrol eden bir deney betiği de var: `./experiments/idempotency/run-e02.sh`.
 
 ## Teknoloji yığını
 
@@ -57,6 +61,7 @@ Bunlar yalnızca uygulama tercihleridir. İncelenen güvenilirlik ilkeleri tekno
 distributed-reliability-lab/
 ├── experiments/
 │   ├── transactional-outbox/   # E01 Lost Event: .NET servisi, deney betiği, xUnit testleri
+│   ├── idempotency/            # E02 Duplicate Delivery: outbox worker, naif ve idempotent tüketiciler, deney betiği, xUnit testleri
 │   └── retry-resilience/       # E03 Retry Storm (E03-A, E03-B): simüle bağımlı servis, yük üretici, xUnit testleri
 ├── infrastructure/
 │   └── compose.yaml            # yerel deneyler için ortak PostgreSQL + RabbitMQ
@@ -66,8 +71,6 @@ distributed-reliability-lab/
 ├── README.md
 └── README.tr.md
 ```
-
-`experiments/idempotency/` (E02) planlanıyor. Mevcut klasörler gibi onu da boş bir iskelet olarak değil, çalıştırılabilir koduyla birlikte ekleyeceğiz.
 
 ## İlkeler
 
@@ -79,7 +82,7 @@ distributed-reliability-lab/
 
 ## İlgili yazılar
 
-1. [Dağıtık Sistemlerde Idempotency](https://emregorgulu.com/tr/makaleler/dagitik-sistemlerde-idempotency/) ([English](https://emregorgulu.com/en/articles/idempotency-in-distributed-systems/)) — aynı mantıksal isteğin tekrarlı etkileri.
+1. [Dağıtık Sistemlerde Idempotency](https://emregorgulu.com/tr/makaleler/dagitik-sistemlerde-idempotency/) ([English](https://emregorgulu.com/en/articles/idempotency-in-distributed-systems/)) — aynı mantıksal isteğin tekrarlı etkileri; E02 aynı soruyu tekrar eden mesaj teslimatları için inceliyor.
 2. [Transactional Outbox](https://emregorgulu.com/tr/makaleler/transactional-outbox/) ([English](https://emregorgulu.com/en/articles/transactional-outbox/)) — olay yayımı niyetinin kalıcı hale getirilmesi; kanıtlarını E01 sağlıyor.
 3. [Retry, Timeout ve Backoff: Ne Zaman Yeniden Denememeliyiz?](https://emregorgulu.com/tr/makaleler/retry-timeout-ve-backoff/) ([English](https://emregorgulu.com/en/articles/retry-timeout-and-backoff/)) — güvenli yeniden deneme, backoff, jitter ve retry bütçesi; kanıtlarını E03 sağlıyor.
 

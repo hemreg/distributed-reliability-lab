@@ -1,6 +1,6 @@
 # Experiment specifications
 
-**E01 and E03 are implemented and runnable** (see [experiments/transactional-outbox](../experiments/transactional-outbox/README.md) and [experiments/retry-resilience](../experiments/retry-resilience/README.md)). **E02 is planned**, not yet implemented. Each must be reproducible from a clean Docker Compose environment with explicit failure toggles, traceable correlation IDs, and assertions.
+**E01, E02 and E03 are implemented and runnable** (see [experiments/transactional-outbox](../experiments/transactional-outbox/README.md), [experiments/idempotency](../experiments/idempotency/README.md) and [experiments/retry-resilience](../experiments/retry-resilience/README.md)). Each must be reproducible from a clean Docker Compose environment with explicit failure toggles, traceable correlation IDs, and assertions.
 
 ## E01 — Lost Event
 
@@ -26,6 +26,8 @@
 
 **Acceptance:** Broker may observe multiple deliveries; consumer's database business effect occurs once for the same event ID. External side effects are explicitly outside that transaction and require separate safeguards.
 
+**Implementation:** [experiments/idempotency](../experiments/idempotency/README.md). Start it with `cd experiments/idempotency && docker compose up --build`, run the scripted experiment with `./experiments/idempotency/run-e02.sh` (27 checks) and test it with `./experiments/idempotency/test-e02.sh` (12 tests). The business effect is a spare-part reservation: each `WorkOrderCreated` reserves one seal kit and lowers that consumer's stock by one. Two crash points are injected as real process kills: the outbox worker after the publisher confirm and before marking the row published, and a consumer after its `COMMIT` and before its ack. A naive consumer (unsafe baseline) and an idempotent consumer (`processed_messages` with `PRIMARY KEY (consumer, event_id)`, inserted with `ON CONFLICT DO NOTHING` in the same transaction as the reservation and the stock update) receive the same deliveries side by side. Observed: two broker copies of one event ID, two reservations from the naive consumer and one from the idempotent consumer, the same after a redelivery (`redelivered=true`), and no change after restarting the worker and both consumers. Not covered: external side effects, poison messages, retention of processed IDs, concurrent consumer processes under load (concurrency is tested in process).
+
 ## E03 — Retry Storm
 
 **Baseline:** Simulate a dependency with finite capacity, increasing latency, and transient errors. Clients retry immediately.
@@ -49,4 +51,4 @@ For each experiment include: prerequisites, launch/teardown commands, precise fa
 
 ## Implementation order
 
-Build E01 first, then E02 using the same infrastructure, then E03. (E03 needs no shared infrastructure and was implemented before E02.) Keep unsafe examples obviously labeled and local-only.
+Build E01 first, then E02 using the same infrastructure, then E03. (E03 needs no shared infrastructure and was implemented before E02.) All three are now implemented. Keep unsafe examples obviously labeled and local-only.

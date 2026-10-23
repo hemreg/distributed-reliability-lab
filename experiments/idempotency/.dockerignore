@@ -1,0 +1,7 @@
+**/bin/
+**/obj/
+**/TestResults/
+results/
+*.md
+*.sh
+*.env

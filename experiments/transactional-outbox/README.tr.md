@@ -2,6 +2,8 @@
 
 **Türkçe** · [English](README.md)
 
+İlgili yazı: [Transactional Outbox](https://emregorgulu.com/tr/makaleler/transactional-outbox/) ([English](https://emregorgulu.com/en/articles/transactional-outbox/)).
+
 > **Durum:** Çalıştırılabilir. Aşağıdaki deney betiği ve test paketi, burada listelenen sabit sürümlerle 2026-10-22 tarihinde çalıştırıldı. Başka makinelerde elde edilecek sonuçlar için bir iddiada bulunulmuyor.
 
 ## Soru

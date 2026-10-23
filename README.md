@@ -77,11 +77,9 @@ distributed-reliability-lab/
 
 ## Accompanying articles
 
-- Idempotency in Distributed Systems — duplicate logical requests and business effects.
-- Transactional Outbox — making event publication intent durable.
-- Retry, Timeout, and Backoff — upcoming article on safe retries; E03 provides its evidence.
-
-Links to the individual bilingual articles will be added when verified.
+1. [Idempotency in Distributed Systems](https://emregorgulu.com/en/articles/idempotency-in-distributed-systems/) ([Türkçe](https://emregorgulu.com/tr/makaleler/dagitik-sistemlerde-idempotency/)) — duplicate logical requests and business effects.
+2. [Transactional Outbox](https://emregorgulu.com/en/articles/transactional-outbox/) ([Türkçe](https://emregorgulu.com/tr/makaleler/transactional-outbox/)) — making event publication intent durable; E01 provides its evidence.
+3. [Retry, Timeout, and Backoff: When Should We Stop Retrying?](https://emregorgulu.com/en/articles/retry-timeout-and-backoff/) ([Türkçe](https://emregorgulu.com/tr/makaleler/retry-timeout-ve-backoff/)) — safe retries, backoff, jitter and retry budgets; E03 provides its evidence.
 
 ## Contributions
 

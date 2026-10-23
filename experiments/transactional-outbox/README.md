@@ -2,6 +2,8 @@
 
 [🇹🇷 Türkçe](README.tr.md) · **English**
 
+Accompanying article: [Transactional Outbox](https://emregorgulu.com/en/articles/transactional-outbox/) ([Türkçe](https://emregorgulu.com/tr/makaleler/transactional-outbox/)).
+
 > **Status:** runnable. The scripted experiment and the test suite below were executed on 2026-10-22 with the pinned versions listed here. Results from other machines are not claimed.
 
 ## Question

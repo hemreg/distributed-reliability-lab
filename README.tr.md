@@ -77,11 +77,9 @@ distributed-reliability-lab/
 
 ## İlgili yazılar
 
-- Dağıtık Sistemlerde Idempotency — aynı mantıksal isteğin tekrarlı etkileri.
-- Transactional Outbox — olay yayımı niyetinin kalıcı hale getirilmesi.
-- Retry, Timeout ve Backoff — güvenli yeniden deneme üzerine hazırlanan yazı; kanıtlarını E03 sağlıyor.
-
-TR/EN makalelerin doğrulanmış bağlantılarını daha sonra ekleyeceğiz.
+1. [Dağıtık Sistemlerde Idempotency](https://emregorgulu.com/tr/makaleler/dagitik-sistemlerde-idempotency/) ([English](https://emregorgulu.com/en/articles/idempotency-in-distributed-systems/)) — aynı mantıksal isteğin tekrarlı etkileri.
+2. [Transactional Outbox](https://emregorgulu.com/tr/makaleler/transactional-outbox/) ([English](https://emregorgulu.com/en/articles/transactional-outbox/)) — olay yayımı niyetinin kalıcı hale getirilmesi; kanıtlarını E01 sağlıyor.
+3. [Retry, Timeout ve Backoff: Ne Zaman Yeniden Denememeliyiz?](https://emregorgulu.com/tr/makaleler/retry-timeout-ve-backoff/) ([English](https://emregorgulu.com/en/articles/retry-timeout-and-backoff/)) — güvenli yeniden deneme, backoff, jitter ve retry bütçesi; kanıtlarını E03 sağlıyor.
 
 ## Katkı
 

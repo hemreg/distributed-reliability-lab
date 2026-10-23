@@ -2,7 +2,9 @@
 
 [🇹🇷 Türkçe](README.tr.md) · **English**
 
-> **Status:** runnable. Both scenarios, the repeat script and the test suite below were executed on 2026-10-22 with the pinned versions listed here. The numbers come from one laptop. Results from other machines are not claimed.
+Accompanying article: [Retry, Timeout, and Backoff: When Should We Stop Retrying?](https://emregorgulu.com/en/articles/retry-timeout-and-backoff/) ([Türkçe](https://emregorgulu.com/tr/makaleler/retry-timeout-ve-backoff/)). Its Figure 1 and Figure 2 are drawn from `results/sample/e03-b`.
+
+> **Status:** runnable. Both scenarios, the repeat script and the test suite below were executed on 2026-10-22 (the E03-B reference run in `results/sample/e03-b` on 2026-10-23) with the pinned versions listed here. The numbers come from one laptop. Results from other machines are not claimed.
 
 E03 has two scenarios. They share the simulated dependency (10 workers x 40 ms = 250 req/s, a queue of 100, then 503), the article's retry loop (at most 4 attempts, 2 s per attempt) and the strategy definitions. They differ in how the failure reaches the clients.
 

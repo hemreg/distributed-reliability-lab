@@ -2,7 +2,9 @@
 
 **Türkçe** · [English](README.md)
 
-> **Durum:** Çalıştırılabilir. İki senaryo, tekrar betiği ve aşağıdaki test paketi, burada listelenen sabit sürümlerle 2026-10-22 tarihinde çalıştırıldı. Sayılar tek bir dizüstü bilgisayardan alındı. Başka makinelerde elde edilecek sonuçlar için bir iddiada bulunulmuyor.
+İlgili yazı: [Retry, Timeout ve Backoff: Ne Zaman Yeniden Denememeliyiz?](https://emregorgulu.com/tr/makaleler/retry-timeout-ve-backoff/) ([English](https://emregorgulu.com/en/articles/retry-timeout-and-backoff/)). Yazıdaki Şekil 1 ve Şekil 2 `results/sample/e03-b` verisinden çizildi.
+
+> **Durum:** Çalıştırılabilir. İki senaryo, tekrar betiği ve aşağıdaki test paketi, burada listelenen sabit sürümlerle 2026-10-22 tarihinde çalıştırıldı (`results/sample/e03-b` içindeki E03-B referans çalıştırması 2026-10-23'te). Sayılar tek bir dizüstü bilgisayardan alındı. Başka makinelerde elde edilecek sonuçlar için bir iddiada bulunulmuyor.
 
 E03 iki senaryodan oluşur. İkisi de aynı simüle bağımlı servisi (10 worker x 40 ms = 250 istek/sn, 100'lük kuyruk, ötesinde 503), makaledeki retry döngüsünü (en fazla 4 deneme, deneme başına 2 sn) ve aynı strateji tanımlarını paylaşır. Farkları, arızanın istemcilere nasıl ulaştığıdır.
 

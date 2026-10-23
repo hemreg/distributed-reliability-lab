@@ -8,7 +8,7 @@ Bu depo, [emregorgulu.com](https://emregorgulu.com) üzerindeki *Dağıtık Sist
 
 > **Proje durumu:** E01 (Lost Event) ve E03 (Retry Storm) çalıştırılabilir durumda. Deneyleri ve otomatik testleri çalıştırıldı; ayrıntılar için [experiments/transactional-outbox](experiments/transactional-outbox/README.tr.md) ve [experiments/retry-resilience](experiments/retry-resilience/README.tr.md). E02 tanımlandı ancak henüz geliştirilmedi.
 
-## Yanıt aradığımız sorular
+## Araştırma soruları
 
 - Veritabanı transaction'ı tamamlanır ama ilgili olay yayımlanamazsa ne olur?
 - Outbox kullanırken bile aynı mesaj neden yeniden gönderilebilir?
@@ -49,7 +49,7 @@ Enjekte edilen arıza, neyin ölçüldüğü ve sonucun nasıl okunacağı her d
 - **Docker Compose:** Tekrarlanabilir yerel deney ortamı
 - **Otomatik testler ve yapılandırılmış loglar:** Gözlemlenebilir sonuçlar
 
-Bunlar yalnızca uygulama tercihleridir. İncelediğimiz güvenilirlik ilkeleri teknolojiden bağımsızdır.
+Bunlar yalnızca uygulama tercihleridir. İncelenen güvenilirlik ilkeleri teknolojiden bağımsızdır.
 
 ## Klasör yapısı
 
@@ -69,7 +69,7 @@ distributed-reliability-lab/
 
 `experiments/idempotency/` (E02) planlanıyor. Mevcut klasörler gibi onu da boş bir iskelet olarak değil, çalıştırılabilir koduyla birlikte ekleyeceğiz.
 
-## Yaklaşımımız
+## İlkeler
 
 1. **Arızayı görünür kılmak:** Hangi noktada müdahale edildiğini ve ne olduğunun nasıl gözlemlendiğini belirtmek.
 2. **Önce-sonra karşılaştırması:** Güvensiz başlangıç davranışını gösterip ardından çözümü denemek.

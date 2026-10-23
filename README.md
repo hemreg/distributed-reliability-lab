@@ -30,10 +30,12 @@ Read the [experiment specifications](docs/experiments.md) for invariants and acc
 Each runnable experiment starts with a single command from its own directory; only Docker (Compose v2) is needed:
 
 ```bash
-cd experiments/transactional-outbox    # E01: starts both write paths; the README walks you through the crash
+# E01: starts both write paths; the README walks you through the crash
+cd experiments/transactional-outbox
 docker compose up --build
 
-cd experiments/retry-resilience        # E03: runs scenarios E03-A and E03-B (~4-5 min), prints the tables, then stops
+# E03: runs scenarios E03-A and E03-B (~4-5 min), prints the tables, then stops
+cd experiments/retry-resilience
 docker compose up --build
 ```
 

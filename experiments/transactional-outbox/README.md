@@ -118,7 +118,8 @@ From the repository root:
 
 # Keep the stack running afterwards (RabbitMQ UI at http://127.0.0.1:15682, lab/lab)
 KEEP=1 ./experiments/transactional-outbox/run-e01.sh
-docker compose -f experiments/transactional-outbox/compose.yaml down -v   # teardown when done
+# teardown when done
+docker compose -f experiments/transactional-outbox/compose.yaml down -v
 
 # Acceptance tests (xUnit, in Docker, against the compose PostgreSQL/RabbitMQ), then teardown
 ./experiments/transactional-outbox/test-e01.sh
@@ -135,7 +136,8 @@ docker compose -f experiments/transactional-outbox/compose.yaml --profile test d
 ```bash
 C="docker compose -f experiments/transactional-outbox/compose.yaml"
 $C up -d --wait postgres rabbitmq
-E01_MODE=naive $C up -d --no-deps workorders            # or E01_MODE=outbox
+# or E01_MODE=outbox
+E01_MODE=naive $C up -d --no-deps workorders
 
 curl -X POST http://127.0.0.1:18480/work-orders -H 'X-Operation-Id: op-1'
 curl -X POST http://127.0.0.1:18480/work-orders -H 'X-Operation-Id: op-2' -H 'X-Fault-Inject: crash-after-commit'

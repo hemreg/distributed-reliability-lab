@@ -30,10 +30,12 @@ Arıza noktaları, değişmezler ve kabul ölçütleri için [deney tanımların
 Çalıştırılabilir her deney kendi klasöründen tek komutla başlar; yalnızca Docker (Compose v2) gerekir:
 
 ```bash
-cd experiments/transactional-outbox    # E01: iki yazma yolunu başlatır; çökme adımlarını README anlatır
+# E01: iki yazma yolunu başlatır; çökme adımlarını README anlatır
+cd experiments/transactional-outbox
 docker compose up --build
 
-cd experiments/retry-resilience        # E03: E03-A ve E03-B senaryolarını çalıştırır (~4-5 dk), tabloları yazdırır ve durur
+# E03: E03-A ve E03-B senaryolarını çalıştırır (~4-5 dk), tabloları yazdırır ve durur
+cd experiments/retry-resilience
 docker compose up --build
 ```
 

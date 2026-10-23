@@ -537,9 +537,11 @@ The dependency logs `freeze_started`, `restarted` (with `held`, the number of re
 ## Repeating with several seeds
 
 ```bash
-./repeat-e03.sh                          # E03-A and E03-B, seeds 42 1 2 3 4: about 21 minutes
+# E03-A and E03-B, seeds 42 1 2 3 4: about 21 minutes
+./repeat-e03.sh
 E03_REPEAT_SEEDS="7 8 9" ./repeat-e03.sh
-E03_SCENARIOS=b ./repeat-e03.sh          # E03-B only
+# E03-B only
+E03_SCENARIOS=b ./repeat-e03.sh
 ```
 
 The script empties `results/repeat/`, runs `docker compose up` once per seed (output in `results/repeat/seed-N/` and `results/repeat/seed-N.log`), then runs `LoadGenerator aggregate`, which reads every `summary.json`, prints per scenario, strategy and metric the median and min-max, followed by every individual value in seed order, and writes `results/repeat/repeat.txt` and `repeat.json`. All other `E03_*` / `E03B_*` variables are passed through. On macOS it keeps the machine awake with `caffeinate` while it runs.
@@ -565,8 +567,10 @@ Medians and ranges over five runs are a description of the spread, not a statist
 | Workload and dependency | Same seed gives the same arrival schedule. Arrivals are ascending and near the rate. Admission at workers + queue. FIFO workers. Capacity arithmetic. |
 
 ```bash
-./test-e03.sh                                  # in Docker, no local .NET SDK needed
-docker compose run --rm --build tests          # the same without the wrapper
+# in Docker, no local .NET SDK needed
+./test-e03.sh
+# the same without the wrapper
+docker compose run --rm --build tests
 ```
 
 Output on 2026-10-22 (trimmed):

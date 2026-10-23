@@ -118,7 +118,8 @@ Depo kök dizininden:
 
 # Ortamı sonrasında açık bırakmak için (RabbitMQ arayüzü: http://127.0.0.1:15682, lab/lab)
 KEEP=1 ./experiments/transactional-outbox/run-e01.sh
-docker compose -f experiments/transactional-outbox/compose.yaml down -v   # işiniz bitince
+# işiniz bitince
+docker compose -f experiments/transactional-outbox/compose.yaml down -v
 
 # Kabul testleri (xUnit, Docker içinde, compose PostgreSQL/RabbitMQ'ya karşı), ardından kaldırma
 ./experiments/transactional-outbox/test-e01.sh
@@ -135,7 +136,8 @@ Herhangi bir gözlem beklentiden farklı çıkarsa `run-e01.sh` sıfırdan farkl
 ```bash
 C="docker compose -f experiments/transactional-outbox/compose.yaml"
 $C up -d --wait postgres rabbitmq
-E01_MODE=naive $C up -d --no-deps workorders            # veya E01_MODE=outbox
+# veya E01_MODE=outbox
+E01_MODE=naive $C up -d --no-deps workorders
 
 curl -X POST http://127.0.0.1:18480/work-orders -H 'X-Operation-Id: op-1'
 curl -X POST http://127.0.0.1:18480/work-orders -H 'X-Operation-Id: op-2' -H 'X-Fault-Inject: crash-after-commit'

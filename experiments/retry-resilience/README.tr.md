@@ -537,9 +537,11 @@ Bağımlı servis `freeze_started`, `restarted` (`held`: yeniden başlatmada hat
 ## Birden fazla seed ile tekrarlama
 
 ```bash
-./repeat-e03.sh                          # E03-A ve E03-B, seed 42 1 2 3 4: yaklaşık 21 dakika
+# E03-A ve E03-B, seed 42 1 2 3 4: yaklaşık 21 dakika
+./repeat-e03.sh
 E03_REPEAT_SEEDS="7 8 9" ./repeat-e03.sh
-E03_SCENARIOS=b ./repeat-e03.sh          # yalnızca E03-B
+# yalnızca E03-B
+E03_SCENARIOS=b ./repeat-e03.sh
 ```
 
 Betik `results/repeat/` klasörünü boşaltır, her seed için bir kez `docker compose up` çalıştırır (çıktı `results/repeat/seed-N/` ve `results/repeat/seed-N.log` içinde), ardından `LoadGenerator aggregate` çalıştırır. Bu komut her `summary.json` dosyasını okur; senaryo, strateji ve metrik başına medyanı ve en düşük-en yüksek aralığını, ardından seed sırasıyla tek tek her değeri yazdırır ve `results/repeat/repeat.txt` ile `repeat.json` dosyalarını yazar. Diğer tüm `E03_*` / `E03B_*` değişkenleri olduğu gibi aktarılır. macOS'ta çalıştığı süre boyunca makineyi `caffeinate` ile uyanık tutar.
@@ -565,8 +567,10 @@ Beş çalıştırma üzerinden medyan ve aralıklar dağılımın bir tarifidir,
 | İş yükü ve bağımlı servis | Aynı seed aynı geliş takvimini verir. Gelişler artan sıradadır ve hıza yakındır. Kabul sınırı worker + kuyruktur. Worker'lar FIFO'dur. Kapasite hesabı doğrudur. |
 
 ```bash
-./test-e03.sh                                  # Docker içinde, yerel .NET SDK gerekmez
-docker compose run --rm --build tests          # betik olmadan eşdeğeri
+# Docker içinde, yerel .NET SDK gerekmez
+./test-e03.sh
+# betik olmadan eşdeğeri
+docker compose run --rm --build tests
 ```
 
 2026-10-22 tarihli çıktı (kısaltılmış):

@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Dependency/Dependency.csproj" />
+    <Project Path="src/LoadGenerator/LoadGenerator.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/RetryResilience.Tests/RetryResilience.Tests.csproj" />
+  </Folder>
+</Solution>

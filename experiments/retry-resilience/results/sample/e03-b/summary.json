@@ -1,0 +1,569 @@
+{
+  "schema": "drlab-e03/summary/v2",
+  "experiment": "E03 Retry Storm",
+  "scenario": {
+    "id": "e03-b",
+    "title": "Correlated failure and recovery pressure"
+  },
+  "startedAtUtc": "2026-10-23T02:15:08.9958112+00:00",
+  "finishedAtUtc": "2026-10-23T02:17:30.1859148+00:00",
+  "versions": {
+    "runtime": ".NET 10.0.13",
+    "os": "Ubuntu 24.04.5 LTS",
+    "architecture": "Arm64",
+    "images": "build=mcr.microsoft.com/dotnet/sdk:10.0.402 runtime=mcr.microsoft.com/dotnet/aspnet:10.0.13"
+  },
+  "environment": {
+    "processorCount": 12
+  },
+  "parameters": {
+    "load": {
+      "model": "closed loop: each client runs one logical operation at a time, then thinks",
+      "clients": 200,
+      "thinkTimeMs": {
+        "distribution": "uniform, whole ms, seeded per client",
+        "min": 1000,
+        "max": 3000
+      },
+      "firstStartMs": {
+        "distribution": "uniform per client",
+        "min": 0,
+        "max": 3000
+      },
+      "approximateOfferedRatePerSecond": 100,
+      "durationSeconds": 30,
+      "seed": 42,
+      "warmupSeconds": 2,
+      "order": [
+        "A",
+        "B",
+        "C",
+        "D"
+      ]
+    },
+    "dependency": {
+      "workers": 10,
+      "serviceTimeMs": 40,
+      "queueLimit": 100,
+      "admissionLimit": 110,
+      "capacityPerSecond": 250
+    },
+    "failure": {
+      "description": "freeze (nothing completes, every request is held), then a restart that fails every request inside with 503 at the same instant, then an optional outage (everything refused), then a cold start with slower service",
+      "freezeStartMs": 8500,
+      "restartMs": 10000,
+      "outageEndMs": 10000,
+      "coldEndMs": 15000,
+      "freezeMs": 1500,
+      "outageMs": 0,
+      "coldMs": 5000,
+      "coldServiceTimeMs": 80,
+      "coldCapacityPerSecond": 125
+    },
+    "client": {
+      "maxAttempts": 4,
+      "attemptTimeoutMs": 2000,
+      "retryOn": [
+        "408",
+        "429",
+        "502",
+        "503",
+        "504",
+        "attempt timeout",
+        "HttpRequestException"
+      ],
+      "operationDeadlineMs": 5000,
+      "operationDeadlineAppliesTo": "every strategy",
+      "retryBudget": {
+        "appliesTo": "D",
+        "ratio": 0.1,
+        "maxTokens": 10,
+        "initialTokens": 10,
+        "scope": "one bucket shared by all clients of the run (one calling service)",
+        "rule": "each new logical operation adds ratio tokens (capped at maxTokens); a retry needs and removes 1 token; without a token the operation ends"
+      }
+    },
+    "recovery": {
+      "definition": "first second s \u003E= the restart second where the per-second success ratio of completed logical operations \u003E= 0.95 for 3 consecutive seconds; recovery = s - restart second",
+      "fromSecond": 10,
+      "threshold": 0.95,
+      "sustainSeconds": 3
+    },
+    "affectedOperations": {
+      "definition": "logical operations that started from the freeze until the end of the cold start",
+      "fromMs": 8500,
+      "toMs": 15000
+    },
+    "requestsDuringRecovery": {
+      "definition": "requests received by the dependency from the restart until the end of the cold start",
+      "fromMs": 10000,
+      "toMs": 15000
+    }
+  },
+  "strategies": [
+    {
+      "id": "A",
+      "name": "Immediate retry",
+      "waiting": "none: next attempt at once; total 5 s per operation",
+      "unsafeBaseline": true,
+      "operationDeadlineMs": 5000,
+      "retryBudget": null,
+      "operations": {
+        "started": 2820,
+        "succeeded": 2782,
+        "failed": 38,
+        "successPercent": 98.65,
+        "failedBy": {
+          "exhausted_503": 38
+        },
+        "attemptsHistogram": {
+          "1": 2676,
+          "2": 106,
+          "4": 38
+        }
+      },
+      "byStartPhase": {
+        "beforeFreeze": {
+          "fromS": 0,
+          "toS": 8.5,
+          "started": 807,
+          "succeeded": 807,
+          "failed": 0,
+          "successPercent": 100,
+          "attemptsPerOperation": 1.005
+        },
+        "affected": {
+          "fromS": 8.5,
+          "toS": 15,
+          "started": 532,
+          "succeeded": 494,
+          "failed": 38,
+          "successPercent": 92.86,
+          "attemptsPerOperation": 1.406
+        },
+        "afterColdStart": {
+          "fromS": 15,
+          "toS": 30,
+          "started": 1481,
+          "succeeded": 1481,
+          "failed": 0,
+          "successPercent": 100,
+          "attemptsPerOperation": 1
+        }
+      },
+      "load": {
+        "requestsAtDependency": 3040,
+        "amplification": 1.078,
+        "attemptsSent": 3040,
+        "firstAttempts": 2820,
+        "retriesSent": 220,
+        "retriesDenied": 0,
+        "requestsDuringRecovery": 619,
+        "peakRequestsPerSecond": 275,
+        "peakRequestsPer100Ms": 232,
+        "peakRequestsPer100MsAtMs": 10000,
+        "responsesByStatus": {
+          "200": 2782,
+          "503": 258
+        },
+        "timeouts": 0,
+        "cutByDeadline": 0,
+        "httpErrors": 0
+      },
+      "concurrency": {
+        "peakActive": 137,
+        "heldAtRestart": 137,
+        "peakActiveAfterRestart": 110
+      },
+      "dependency": {
+        "received": 3040,
+        "ok": 2782,
+        "rejected503": 121,
+        "restart503": 137,
+        "refused503": 0,
+        "abandoned": 0,
+        "restartedAtMs": 10000.6
+      },
+      "latencyMs": {
+        "all": {
+          "count": 2820,
+          "p50": 42.6,
+          "p95": 627.9,
+          "p99": 1599.6,
+          "max": 2121.8
+        },
+        "succeeded": {
+          "count": 2782,
+          "p50": 42.5,
+          "p95": 454.6,
+          "p99": 1611.8,
+          "max": 2121.8
+        },
+        "failed": {
+          "count": 38,
+          "p50": 548.8,
+          "p95": 910.9,
+          "p99": 949.7,
+          "max": 949.7
+        }
+      },
+      "recovery": {
+        "recovered": true,
+        "seconds": 1,
+        "firstHealthySecond": 11
+      },
+      "runSeconds": 32.85,
+      "maxWakeLagMs": 7.37,
+      "clientClockOffsetMs": 2.38
+    },
+    {
+      "id": "B",
+      "name": "Exponential backoff",
+      "waiting": "200, 400, 800 ms (no jitter); total 5 s per operation",
+      "unsafeBaseline": false,
+      "operationDeadlineMs": 5000,
+      "retryBudget": null,
+      "operations": {
+        "started": 2774,
+        "succeeded": 2774,
+        "failed": 0,
+        "successPercent": 100,
+        "failedBy": {},
+        "attemptsHistogram": {
+          "1": 2631,
+          "2": 111,
+          "3": 25,
+          "4": 7
+        }
+      },
+      "byStartPhase": {
+        "beforeFreeze": {
+          "fromS": 0,
+          "toS": 8.5,
+          "started": 807,
+          "succeeded": 807,
+          "failed": 0,
+          "successPercent": 100,
+          "attemptsPerOperation": 1.006
+        },
+        "affected": {
+          "fromS": 8.5,
+          "toS": 15,
+          "started": 489,
+          "succeeded": 489,
+          "failed": 0,
+          "successPercent": 100,
+          "attemptsPerOperation": 1.362
+        },
+        "afterColdStart": {
+          "fromS": 15,
+          "toS": 30,
+          "started": 1478,
+          "succeeded": 1478,
+          "failed": 0,
+          "successPercent": 100,
+          "attemptsPerOperation": 1
+        }
+      },
+      "load": {
+        "requestsAtDependency": 2956,
+        "amplification": 1.066,
+        "attemptsSent": 2956,
+        "firstAttempts": 2774,
+        "retriesSent": 182,
+        "retriesDenied": 0,
+        "requestsDuringRecovery": 537,
+        "peakRequestsPerSecond": 229,
+        "peakRequestsPer100Ms": 143,
+        "peakRequestsPer100MsAtMs": 10200,
+        "responsesByStatus": {
+          "200": 2774,
+          "503": 182
+        },
+        "timeouts": 0,
+        "cutByDeadline": 0,
+        "httpErrors": 0
+      },
+      "concurrency": {
+        "peakActive": 138,
+        "heldAtRestart": 138,
+        "peakActiveAfterRestart": 110
+      },
+      "dependency": {
+        "received": 2956,
+        "ok": 2774,
+        "rejected503": 44,
+        "restart503": 138,
+        "refused503": 0,
+        "abandoned": 0,
+        "restartedAtMs": 10001.2
+      },
+      "latencyMs": {
+        "all": {
+          "count": 2774,
+          "p50": 42.5,
+          "p95": 844.1,
+          "p99": 2132.3,
+          "max": 3180.5
+        },
+        "succeeded": {
+          "count": 2774,
+          "p50": 42.5,
+          "p95": 844.1,
+          "p99": 2132.3,
+          "max": 3180.5
+        },
+        "failed": {
+          "count": 0,
+          "p50": null,
+          "p95": null,
+          "p99": null,
+          "max": null
+        }
+      },
+      "recovery": {
+        "recovered": true,
+        "seconds": 0,
+        "firstHealthySecond": 10
+      },
+      "runSeconds": 32.93,
+      "maxWakeLagMs": 17.08,
+      "clientClockOffsetMs": 2.58
+    },
+    {
+      "id": "C",
+      "name": "Exponential backoff \u002B full jitter \u002B limits",
+      "waiting": "random 0-200, 0-400, 0-800 ms; total 5 s per operation",
+      "unsafeBaseline": false,
+      "operationDeadlineMs": 5000,
+      "retryBudget": null,
+      "operations": {
+        "started": 2788,
+        "succeeded": 2788,
+        "failed": 0,
+        "successPercent": 100,
+        "failedBy": {},
+        "attemptsHistogram": {
+          "1": 2645,
+          "2": 120,
+          "3": 18,
+          "4": 5
+        }
+      },
+      "byStartPhase": {
+        "beforeFreeze": {
+          "fromS": 0,
+          "toS": 8.5,
+          "started": 806,
+          "succeeded": 806,
+          "failed": 0,
+          "successPercent": 100,
+          "attemptsPerOperation": 1.005
+        },
+        "affected": {
+          "fromS": 8.5,
+          "toS": 15,
+          "started": 512,
+          "succeeded": 512,
+          "failed": 0,
+          "successPercent": 100,
+          "attemptsPerOperation": 1.326
+        },
+        "afterColdStart": {
+          "fromS": 15,
+          "toS": 30,
+          "started": 1470,
+          "succeeded": 1470,
+          "failed": 0,
+          "successPercent": 100,
+          "attemptsPerOperation": 1
+        }
+      },
+      "load": {
+        "requestsAtDependency": 2959,
+        "amplification": 1.061,
+        "attemptsSent": 2959,
+        "firstAttempts": 2788,
+        "retriesSent": 171,
+        "retriesDenied": 0,
+        "requestsDuringRecovery": 549,
+        "peakRequestsPerSecond": 225,
+        "peakRequestsPer100Ms": 76,
+        "peakRequestsPer100MsAtMs": 10000,
+        "responsesByStatus": {
+          "200": 2788,
+          "503": 171
+        },
+        "timeouts": 0,
+        "cutByDeadline": 0,
+        "httpErrors": 0
+      },
+      "concurrency": {
+        "peakActive": 137,
+        "heldAtRestart": 137,
+        "peakActiveAfterRestart": 111
+      },
+      "dependency": {
+        "received": 2959,
+        "ok": 2788,
+        "rejected503": 34,
+        "restart503": 137,
+        "refused503": 0,
+        "abandoned": 0,
+        "restartedAtMs": 10000.3
+      },
+      "latencyMs": {
+        "all": {
+          "count": 2788,
+          "p50": 42.6,
+          "p95": 870.2,
+          "p99": 2042.8,
+          "max": 2970.5
+        },
+        "succeeded": {
+          "count": 2788,
+          "p50": 42.6,
+          "p95": 870.2,
+          "p99": 2042.8,
+          "max": 2970.5
+        },
+        "failed": {
+          "count": 0,
+          "p50": null,
+          "p95": null,
+          "p99": null,
+          "max": null
+        }
+      },
+      "recovery": {
+        "recovered": true,
+        "seconds": 0,
+        "firstHealthySecond": 10
+      },
+      "runSeconds": 32.87,
+      "maxWakeLagMs": 7.4,
+      "clientClockOffsetMs": 0.7
+    },
+    {
+      "id": "D",
+      "name": "Full jitter \u002B limits \u002B retry budget",
+      "waiting": "as C (total 5 s per operation); a retry needs a token: 0.1 per new operation, at most 10, shared by all clients",
+      "unsafeBaseline": false,
+      "operationDeadlineMs": 5000,
+      "retryBudget": {
+        "ratio": 0.1,
+        "maxTokens": 10,
+        "firstAttempts": 2848,
+        "granted": 10,
+        "denied": 126,
+        "tokensLeft": 10
+      },
+      "operations": {
+        "started": 2848,
+        "succeeded": 2722,
+        "failed": 126,
+        "successPercent": 95.58,
+        "failedBy": {
+          "retry_budget_exhausted": 126
+        },
+        "attemptsHistogram": {
+          "1": 2838,
+          "2": 10
+        }
+      },
+      "byStartPhase": {
+        "beforeFreeze": {
+          "fromS": 0,
+          "toS": 8.5,
+          "started": 807,
+          "succeeded": 805,
+          "failed": 2,
+          "successPercent": 99.75,
+          "attemptsPerOperation": 1
+        },
+        "affected": {
+          "fromS": 8.5,
+          "toS": 15,
+          "started": 564,
+          "succeeded": 440,
+          "failed": 124,
+          "successPercent": 78.01,
+          "attemptsPerOperation": 1.018
+        },
+        "afterColdStart": {
+          "fromS": 15,
+          "toS": 30,
+          "started": 1477,
+          "succeeded": 1477,
+          "failed": 0,
+          "successPercent": 100,
+          "attemptsPerOperation": 1
+        }
+      },
+      "load": {
+        "requestsAtDependency": 2858,
+        "amplification": 1.004,
+        "attemptsSent": 2858,
+        "firstAttempts": 2848,
+        "retriesSent": 10,
+        "retriesDenied": 126,
+        "requestsDuringRecovery": 440,
+        "peakRequestsPerSecond": 120,
+        "peakRequestsPer100Ms": 19,
+        "peakRequestsPer100MsAtMs": 20000,
+        "responsesByStatus": {
+          "200": 2722,
+          "503": 136
+        },
+        "timeouts": 0,
+        "cutByDeadline": 0,
+        "httpErrors": 0
+      },
+      "concurrency": {
+        "peakActive": 136,
+        "heldAtRestart": 136,
+        "peakActiveAfterRestart": 19
+      },
+      "dependency": {
+        "received": 2858,
+        "ok": 2722,
+        "rejected503": 0,
+        "restart503": 136,
+        "refused503": 0,
+        "abandoned": 0,
+        "restartedAtMs": 10000.2
+      },
+      "latencyMs": {
+        "all": {
+          "count": 2848,
+          "p50": 42.7,
+          "p95": 130.6,
+          "p99": 1191.5,
+          "max": 1737.3
+        },
+        "succeeded": {
+          "count": 2722,
+          "p50": 42.6,
+          "p95": 92.1,
+          "p99": 126.6,
+          "max": 1737.3
+        },
+        "failed": {
+          "count": 126,
+          "p50": 752.5,
+          "p95": 1418.4,
+          "p99": 1507.9,
+          "max": 1507.9
+        }
+      },
+      "recovery": {
+        "recovered": true,
+        "seconds": 1,
+        "firstHealthySecond": 11
+      },
+      "runSeconds": 32.84,
+      "maxWakeLagMs": 9.4,
+      "clientClockOffsetMs": 1.64
+    }
+  ]
+}

@@ -12,3 +12,7 @@ obj/
 # Test and experiment artefacts
 TestResults/
 artifacts/
+
+# E03 run output; one reference run is kept in results/sample/
+experiments/retry-resilience/results/*
+!experiments/retry-resilience/results/sample/

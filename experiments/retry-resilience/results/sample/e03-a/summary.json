@@ -1,0 +1,471 @@
+{
+  "schema": "drlab-e03/summary/v1",
+  "experiment": "E03 Retry Storm",
+  "startedAtUtc": "2026-10-22T09:43:14.9219279+00:00",
+  "finishedAtUtc": "2026-10-22T09:44:52.8513845+00:00",
+  "versions": {
+    "runtime": ".NET 10.0.13",
+    "os": "Ubuntu 24.04.5 LTS",
+    "architecture": "Arm64",
+    "images": "build=mcr.microsoft.com/dotnet/sdk:10.0.402 runtime=mcr.microsoft.com/dotnet/aspnet:10.0.13"
+  },
+  "environment": {
+    "processorCount": 12
+  },
+  "parameters": {
+    "load": {
+      "arrivals": "open-loop Poisson (exponential gaps), same schedule for every strategy",
+      "ratePerSecond": 100,
+      "durationSeconds": 30,
+      "operationsPerStrategy": 3038,
+      "seed": 42,
+      "warmupSeconds": 2,
+      "order": [
+        "A",
+        "B",
+        "C"
+      ]
+    },
+    "dependency": {
+      "workers": 10,
+      "serviceTimeMs": 40,
+      "queueLimit": 100,
+      "capacityPerSecond": 250,
+      "failureStartSeconds": 10,
+      "failureEndSeconds": 20,
+      "failureServiceTimeMs": 80,
+      "failureErrorRate": 0.5,
+      "failureCapacityPerSecond": 125,
+      "seed": 42
+    },
+    "client": {
+      "maxAttempts": 4,
+      "attemptTimeoutMs": 2000,
+      "retryOn": [
+        "408",
+        "429",
+        "502",
+        "503",
+        "504",
+        "attempt timeout",
+        "HttpRequestException"
+      ],
+      "strategyCOperationDeadlineMs": 5000
+    },
+    "recovery": {
+      "definition": "first second s \u003E= failure end where the per-second success ratio of completed logical operations \u003E= 0.95 for 3 consecutive seconds; recovery = s - failure end",
+      "threshold": 0.95,
+      "sustainSeconds": 3
+    }
+  },
+  "strategies": [
+    {
+      "id": "A",
+      "name": "Immediate retry",
+      "waiting": "none: next attempt at once",
+      "unsafeBaseline": true,
+      "operationDeadlineMs": null,
+      "operations": {
+        "started": 3038,
+        "succeeded": 2708,
+        "failed": 330,
+        "successPercent": 89.14,
+        "failedBy": {
+          "exhausted_503": 330
+        },
+        "attemptsHistogram": {
+          "1": 2388,
+          "2": 181,
+          "3": 91,
+          "4": 378
+        }
+      },
+      "attempts": {
+        "sentByClient": 4535,
+        "receivedByDependency": 4535,
+        "amplificationClient": 1.493,
+        "amplificationDependency": 1.493,
+        "responsesByStatus": {
+          "200": 2708,
+          "503": 1827
+        },
+        "timeouts": 0,
+        "cutByDeadline": 0,
+        "httpErrors": 0
+      },
+      "dependency": {
+        "received": 4535,
+        "ok": 2708,
+        "injected503": 607,
+        "rejected503": 1220,
+        "abandoned": 0,
+        "peakInFlight": 110,
+        "peakQueued": 100,
+        "peakReceivedPerSecond": 377
+      },
+      "latencyMs": {
+        "all": {
+          "count": 3038,
+          "p50": 45.4,
+          "p95": 1832.6,
+          "p99": 3542.2,
+          "max": 3680.2
+        },
+        "succeeded": {
+          "count": 2708,
+          "p50": 46,
+          "p95": 1825,
+          "p99": 3206.2,
+          "max": 3669.4
+        },
+        "failed": {
+          "count": 330,
+          "p50": 3.5,
+          "p95": 2776.9,
+          "p99": 3655.1,
+          "max": 3680.2
+        }
+      },
+      "byArrivalPhase": {
+        "beforeWindow": {
+          "fromS": 0,
+          "toS": 10,
+          "started": 1017,
+          "succeeded": 1017,
+          "failed": 0,
+          "successPercent": 100,
+          "attemptsPerOperation": 1
+        },
+        "inWindow": {
+          "fromS": 10,
+          "toS": 20,
+          "started": 1022,
+          "succeeded": 699,
+          "failed": 323,
+          "successPercent": 68.4,
+          "attemptsPerOperation": 2.444
+        },
+        "afterWindow": {
+          "fromS": 20,
+          "toS": 30,
+          "started": 999,
+          "succeeded": 992,
+          "failed": 7,
+          "successPercent": 99.3,
+          "attemptsPerOperation": 1.021
+        }
+      },
+      "successPercentByArrivalSecond": [
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        92.86,
+        97.12,
+        83.51,
+        75.56,
+        38.46,
+        53.21,
+        63.37,
+        55.36,
+        73.12,
+        60.4,
+        93.07,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100
+      ],
+      "recovery": {
+        "recovered": true,
+        "seconds": 0,
+        "firstHealthySecond": 20
+      },
+      "runSeconds": 30.03,
+      "maxDispatchLagMs": 119.52
+    },
+    {
+      "id": "B",
+      "name": "Exponential backoff",
+      "waiting": "200, 400, 800 ms (no jitter)",
+      "unsafeBaseline": false,
+      "operationDeadlineMs": null,
+      "operations": {
+        "started": 3038,
+        "succeeded": 2796,
+        "failed": 242,
+        "successPercent": 92.03,
+        "failedBy": {
+          "exhausted_503": 242
+        },
+        "attemptsHistogram": {
+          "1": 2332,
+          "2": 242,
+          "3": 121,
+          "4": 343
+        }
+      },
+      "attempts": {
+        "sentByClient": 4551,
+        "receivedByDependency": 4551,
+        "amplificationClient": 1.498,
+        "amplificationDependency": 1.498,
+        "responsesByStatus": {
+          "200": 2796,
+          "503": 1755
+        },
+        "timeouts": 0,
+        "cutByDeadline": 0,
+        "httpErrors": 0
+      },
+      "dependency": {
+        "received": 4551,
+        "ok": 2796,
+        "injected503": 613,
+        "rejected503": 1142,
+        "abandoned": 0,
+        "peakInFlight": 110,
+        "peakQueued": 100,
+        "peakReceivedPerSecond": 339
+      },
+      "latencyMs": {
+        "all": {
+          "count": 3038,
+          "p50": 45.3,
+          "p95": 2631.2,
+          "p99": 3377.6,
+          "max": 4326.7
+        },
+        "succeeded": {
+          "count": 2796,
+          "p50": 44.7,
+          "p95": 2067,
+          "p99": 3180,
+          "max": 4326.7
+        },
+        "failed": {
+          "count": 242,
+          "p50": 2295.4,
+          "p95": 3630,
+          "p99": 4082.2,
+          "max": 4262.5
+        }
+      },
+      "byArrivalPhase": {
+        "beforeWindow": {
+          "fromS": 0,
+          "toS": 10,
+          "started": 1017,
+          "succeeded": 1017,
+          "failed": 0,
+          "successPercent": 100,
+          "attemptsPerOperation": 1
+        },
+        "inWindow": {
+          "fromS": 10,
+          "toS": 20,
+          "started": 1022,
+          "succeeded": 780,
+          "failed": 242,
+          "successPercent": 76.32,
+          "attemptsPerOperation": 2.475
+        },
+        "afterWindow": {
+          "fromS": 20,
+          "toS": 30,
+          "started": 999,
+          "succeeded": 999,
+          "failed": 0,
+          "successPercent": 100,
+          "attemptsPerOperation": 1.006
+        }
+      },
+      "successPercentByArrivalSecond": [
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        92.86,
+        91.35,
+        84.54,
+        60,
+        60.68,
+        51.38,
+        63.37,
+        68.75,
+        95.7,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100
+      ],
+      "recovery": {
+        "recovered": true,
+        "seconds": 0,
+        "firstHealthySecond": 20
+      },
+      "runSeconds": 30.03,
+      "maxDispatchLagMs": 12.52
+    },
+    {
+      "id": "C",
+      "name": "Exponential backoff \u002B full jitter \u002B limits",
+      "waiting": "random 0-200, 0-400, 0-800 ms; total 5 s per operation",
+      "unsafeBaseline": false,
+      "operationDeadlineMs": 5000,
+      "operations": {
+        "started": 3038,
+        "succeeded": 2769,
+        "failed": 269,
+        "successPercent": 91.15,
+        "failedBy": {
+          "exhausted_503": 269
+        },
+        "attemptsHistogram": {
+          "1": 2319,
+          "2": 207,
+          "3": 133,
+          "4": 379
+        }
+      },
+      "attempts": {
+        "sentByClient": 4648,
+        "receivedByDependency": 4648,
+        "amplificationClient": 1.53,
+        "amplificationDependency": 1.53,
+        "responsesByStatus": {
+          "200": 2769,
+          "503": 1879
+        },
+        "timeouts": 0,
+        "cutByDeadline": 0,
+        "httpErrors": 0
+      },
+      "dependency": {
+        "received": 4648,
+        "ok": 2769,
+        "injected503": 617,
+        "rejected503": 1262,
+        "abandoned": 0,
+        "peakInFlight": 111,
+        "peakQueued": 101,
+        "peakReceivedPerSecond": 375
+      },
+      "latencyMs": {
+        "all": {
+          "count": 3038,
+          "p50": 45.7,
+          "p95": 2129.2,
+          "p99": 3032.9,
+          "max": 4466.4
+        },
+        "succeeded": {
+          "count": 2769,
+          "p50": 45,
+          "p95": 1856.7,
+          "p99": 2847.4,
+          "max": 3962.7
+        },
+        "failed": {
+          "count": 269,
+          "p50": 1558.2,
+          "p95": 3034.7,
+          "p99": 3869.9,
+          "max": 4466.4
+        }
+      },
+      "byArrivalPhase": {
+        "beforeWindow": {
+          "fromS": 0,
+          "toS": 10,
+          "started": 1017,
+          "succeeded": 1017,
+          "failed": 0,
+          "successPercent": 100,
+          "attemptsPerOperation": 1
+        },
+        "inWindow": {
+          "fromS": 10,
+          "toS": 20,
+          "started": 1022,
+          "succeeded": 753,
+          "failed": 269,
+          "successPercent": 73.68,
+          "attemptsPerOperation": 2.56
+        },
+        "afterWindow": {
+          "fromS": 20,
+          "toS": 30,
+          "started": 999,
+          "succeeded": 999,
+          "failed": 0,
+          "successPercent": 100,
+          "attemptsPerOperation": 1.016
+        }
+      },
+      "successPercentByArrivalSecond": [
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        91.84,
+        93.27,
+        82.47,
+        55.56,
+        51.28,
+        57.8,
+        68.32,
+        63.39,
+        83.87,
+        94.06,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100,
+        100
+      ],
+      "recovery": {
+        "recovered": true,
+        "seconds": 0,
+        "firstHealthySecond": 20
+      },
+      "runSeconds": 30.03,
+      "maxDispatchLagMs": 14.46
+    }
+  ]
+}

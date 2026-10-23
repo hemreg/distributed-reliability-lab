@@ -1,6 +1,6 @@
 # Experiment specifications
 
-**E01 is implemented and runnable** (see [experiments/transactional-outbox](../experiments/transactional-outbox/README.md)). **E02 and E03 are planned**, not yet implemented. Each must be reproducible from a clean Docker Compose environment with explicit failure toggles, traceable correlation IDs, and assertions.
+**E01 and E03 are implemented and runnable** (see [experiments/transactional-outbox](../experiments/transactional-outbox/README.md) and [experiments/retry-resilience](../experiments/retry-resilience/README.md)). **E02 is planned**, not yet implemented. Each must be reproducible from a clean Docker Compose environment with explicit failure toggles, traceable correlation IDs, and assertions.
 
 ## E01 — Lost Event
 
@@ -36,10 +36,17 @@
 
 **Acceptance:** Report attempt amplification, completed logical operations, dependency traffic, latency distribution, and rejected/exhausted requests. Compare strategies with the same initial workload and randomized-seed assumptions; do not claim that backoff alone guarantees stability.
 
+**Implementation:** [experiments/retry-resilience](../experiments/retry-resilience/README.md). Run both scenarios with `cd experiments/retry-resilience && docker compose up --build`, repeat them over five seeds with `./experiments/retry-resilience/repeat-e03.sh`, and test with `./experiments/retry-resilience/test-e03.sh`. All strategies share the article's retry loop (at most 4 attempts, 2 s per attempt) and a dependency with finite capacity and a bounded queue that rejects with 503.
+
+- **E03-A — Transient failure under independent arrivals.** Open-loop Poisson arrivals (100 operations/s) and a 10 s window of higher latency and random injected 503s. Compares A (immediate retry, unsafe baseline), B (exponential backoff) and C (backoff + full jitter + a 5 s per-operation deadline). Failures are not synchronised here, so the comparison shows how the waiting changes *when* retries arrive under a sustained incident.
+- **E03-B — Correlated failure and recovery pressure.** A closed-loop population of 200 clients (about 100 operations/s). The dependency freezes for 1.5 s, then restarts: every request inside (132-148 in the reported runs) fails at the same instant, and the restarted process has half capacity for 5 s. Compares A, B, C and D (C + a client-side retry budget: 0.1 token per new operation, at most 10), all with the same 5 s deadline. Reports success, total load, peak load per second and per 100 ms, requests inside the dependency, attempts, p95/p99 and recovery time as separate metrics.
+
+Attempt limits, timeouts, deadlines, backoff with jitter and a retry budget are implemented. **A circuit breaker is not**; overload rejection is the dependency's bounded queue, and a deep-queue variant of E03-A is documented.
+
 ## Evidence format
 
 For each experiment include: prerequisites, launch/teardown commands, precise failure trigger, expected state before/after restart, assertions, sample log fields (`event_id`, `operation_id`, `attempt`, `phase`), limitations, and a brief failure analysis.
 
 ## Implementation order
 
-Build E01 first, then E02 using the same infrastructure, then E03. Keep unsafe examples obviously labeled and local-only.
+Build E01 first, then E02 using the same infrastructure, then E03. (E03 needs no shared infrastructure and was implemented before E02.) Keep unsafe examples obviously labeled and local-only.

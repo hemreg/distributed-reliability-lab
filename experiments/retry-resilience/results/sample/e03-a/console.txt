@@ -1,0 +1,50 @@
+E03 Retry Storm. LOCAL LAB ONLY: strategy A is a deliberately unsafe baseline.
+Workload: 3038 logical operations, open-loop Poisson 100/s for 30 s, seed 42; identical for every strategy.
+Dependency: 10 workers x 40 ms = 250 req/s, queue 100, rejects with 503 beyond that.
+Failure window 10-20 s: service time 80 ms (125 req/s) and 50% injected 503.
+Client: max 4 attempts, 2 s per attempt, retry on 408/429/502/503/504, timeout, HttpRequestException.
+Each strategy: 2 s warm-up (not measured), reset, 30 s measured run, drain.
+
+[A] Immediate retry (UNSAFE BASELINE): wait none: next attempt at once
+  [A] t= 0- 5 s  attempts sent    100/s   ops succeeded    99/s   failed     0/s
+  [A] t= 5-10 s  attempts sent    104/s   ops succeeded   103/s   failed     0/s
+  [A] t=10-15 s  attempts sent    217/s   ops succeeded    60/s   failed    21/s
+  [A] t=15-20 s  attempts sent    281/s   ops succeeded    59/s   failed    44/s
+  [A] t=20-25 s  attempts sent    100/s   ops succeeded   113/s   failed     1/s
+  [A] t=25-30 s  attempts sent    106/s   ops succeeded   106/s   failed     0/s
+  [A] done in 30.0 s: 2708/3038 ops succeeded, 4535 requests at the dependency (4535 sent), max dispatch lag 119.5 ms
+
+[B] Exponential backoff: wait 200, 400, 800 ms (no jitter)
+  [B] t= 0- 5 s  attempts sent    100/s   ops succeeded    99/s   failed     0/s
+  [B] t= 5-10 s  attempts sent    104/s   ops succeeded   103/s   failed     0/s
+  [B] t=10-15 s  attempts sent    178/s   ops succeeded    60/s   failed     4/s
+  [B] t=15-20 s  attempts sent    311/s   ops succeeded    60/s   failed    44/s
+  [B] t=20-25 s  attempts sent    112/s   ops succeeded   130/s   failed     0/s
+  [B] t=25-30 s  attempts sent    106/s   ops succeeded   106/s   failed     0/s
+  [B] done in 30.0 s: 2796/3038 ops succeeded, 4551 requests at the dependency (4551 sent), max dispatch lag 12.5 ms
+
+[C] Exponential backoff + full jitter + limits: wait random 0-200, 0-400, 0-800 ms; total 5 s per operation
+  [C] t= 0- 5 s  attempts sent    100/s   ops succeeded    99/s   failed     0/s
+  [C] t= 5-10 s  attempts sent    104/s   ops succeeded   103/s   failed     0/s
+  [C] t=10-15 s  attempts sent    198/s   ops succeeded    61/s   failed     8/s
+  [C] t=15-20 s  attempts sent    313/s   ops succeeded    61/s   failed    45/s
+  [C] t=20-25 s  attempts sent    109/s   ops succeeded   123/s   failed     1/s
+  [C] t=25-30 s  attempts sent    106/s   ops succeeded   107/s   failed     0/s
+  [C] done in 30.0 s: 2769/3038 ops succeeded, 4648 requests at the dependency (4648 sent), max dispatch lag 14.5 ms
+
+====================================================================================================
+E03 Retry Storm: same workload, same failure window, three client strategies
+====================================================================================================
+Strategy                       Requests   Ampl.  Success  in window      p95      p99 Peak rps Recovery
+----------------------------------------------------------------------------------------------------
+A  immediate retry (UNSAFE)        4535   1.49x    89.1%      68.4%  1833 ms  3542 ms      377      0 s
+B  backoff 200/400/800 ms          4551   1.50x    92.0%      76.3%  2631 ms  3378 ms      339      0 s
+C  backoff + jitter + limits       4648   1.53x    91.2%      73.7%  2129 ms  3033 ms      375      0 s
+----------------------------------------------------------------------------------------------------
+Same 3038 logical ops per strategy (Poisson 100/s, 30 s, seed 42). Dependency 250 req/s (10 x 40 ms), queue 100, then 503.
+Failure 10-20 s: 125 req/s (80 ms), 50% injected 503. All: 4 attempts max, 2 s each; C also 5 s per op.
+Requests: received by the dependency. Ampl.: requests per logical op. Success: ops answered 200 (in window: ops
+started during the failure). p95/p99: end-to-end latency, all ops. Recovery: s after the window until per-second success >= 95% for 3 s.
+
+Wrote results/summary.json and results/timeseries.json.
+One run on one machine: compare strategies within a run, and repeat to see the variation.

@@ -1,0 +1,74 @@
+E03-B Correlated failure and recovery pressure. LOCAL LAB ONLY: strategy A is a deliberately unsafe baseline.
+Clients: 200, closed loop: one logical operation at a time, then think 1000-3000 ms (uniform), about 100 ops/s; seed 42; 30 s.
+Dependency: 10 workers x 40 ms = 250 req/s, queue 100 (admits 110), rejects with 503 beyond that.
+Failure: freeze 8.5-10.0 s (nothing completes, every request is held), restart at 10.0 s: every request inside fails with 503 at that instant;
+         outage (all refused) until 12.0 s, cold start until 17.0 s: service time 80 ms (125 req/s).
+Client: max 4 attempts, 2 s per attempt, 5 s per logical operation for EVERY strategy; retry on 408/429/502/503/504, timeout, HttpRequestException.
+Each strategy: 2 s warm-up (not measured), reset, 30 s measured run, drain.
+
+[A] Immediate retry (UNSAFE BASELINE): wait none: next attempt at once; total 5 s per operation
+  [A] t= 0- 5 s  attempts sent     92/s   ops succeeded    91/s   failed     0/s
+  [A] t= 5-10 s  attempts sent     96/s   ops succeeded    70/s   failed     0/s
+  [A] t=10-15 s  attempts sent    258/s   ops succeeded    57/s   failed    57/s
+  [A] t=15-20 s  attempts sent     99/s   ops succeeded   100/s   failed     0/s
+  [A] t=20-25 s  attempts sent     97/s   ops succeeded    97/s   failed     0/s
+  [A] t=25-30 s  attempts sent     98/s   ops succeeded    98/s   failed     0/s
+  [A] requests at the dependency per 100 ms, 9.5-12.0 s (restart at 10.0 s): 6 7 8 9 10 463 16 12 28 28 32 16 14 18 4 12 56 36 40 48 32 40 20 36 44
+  [A] done in 32.8 s: 2565/2848 ops succeeded, 3697 requests at the dependency (3697 sent), 137 failed together at the restart, max wake-up lag 6.2 ms
+
+[B] Exponential backoff: wait 200, 400, 800 ms (no jitter); total 5 s per operation
+  [B] t= 0- 5 s  attempts sent     92/s   ops succeeded    90/s   failed     0/s
+  [B] t= 5-10 s  attempts sent     97/s   ops succeeded    70/s   failed     0/s
+  [B] t=10-15 s  attempts sent    179/s   ops succeeded    49/s   failed    36/s
+  [B] t=15-20 s  attempts sent    102/s   ops succeeded   102/s   failed     0/s
+  [B] t=20-25 s  attempts sent     95/s   ops succeeded    96/s   failed     0/s
+  [B] t=25-30 s  attempts sent     98/s   ops succeeded    98/s   failed     0/s
+  [B] requests at the dependency per 100 ms, 9.5-12.0 s (restart at 10.0 s): 6 8 8 7 14 10 5 151 12 10 15 157 19 11 13 11 14 7 9 153 10 3 9 12 9
+  [B] done in 32.9 s: 2530/2708 ops succeeded, 3308 requests at the dependency (3308 sent), 138 failed together at the restart, max wake-up lag 7.4 ms
+
+[C] Exponential backoff + full jitter + limits: wait random 0-200, 0-400, 0-800 ms; total 5 s per operation
+  [C] t= 0- 5 s  attempts sent     92/s   ops succeeded    91/s   failed     0/s
+  [C] t= 5-10 s  attempts sent     97/s   ops succeeded    70/s   failed     0/s
+  [C] t=10-15 s  attempts sent    203/s   ops succeeded    58/s   failed    40/s
+  [C] t=15-20 s  attempts sent     98/s   ops succeeded   100/s   failed     0/s
+  [C] t=20-25 s  attempts sent     98/s   ops succeeded    98/s   failed     0/s
+  [C] t=25-30 s  attempts sent     98/s   ops succeeded    98/s   failed     0/s
+  [C] requests at the dependency per 100 ms, 9.5-12.0 s (restart at 10.0 s): 6 7 8 8 12 91 105 54 62 60 53 42 33 30 29 26 19 20 16 9 10 11 10 12 19
+  [C] done in 32.8 s: 2578/2776 ops succeeded, 3426 requests at the dependency (3426 sent), 139 failed together at the restart, max wake-up lag 8.4 ms
+
+[D] Full jitter + limits + retry budget: wait as C (total 5 s per operation); a retry needs a token: 0.1 per new operation, at most 10, shared by all clients
+  [D] t= 0- 5 s  attempts sent     92/s   ops succeeded    91/s   failed     0/s
+  [D] t= 5-10 s  attempts sent     97/s   ops succeeded    70/s   failed     0/s
+  [D] t=10-15 s  attempts sent     93/s   ops succeeded    57/s   failed    56/s
+  [D] t=15-20 s  attempts sent     99/s   ops succeeded   100/s   failed     0/s
+  [D] t=20-25 s  attempts sent     97/s   ops succeeded    97/s   failed     0/s
+  [D] t=25-30 s  attempts sent     98/s   ops succeeded    98/s   failed     0/s
+  [D] requests at the dependency per 100 ms, 9.5-12.0 s (restart at 10.0 s): 7 7 8 7 13 16 11 3 8 8 8 5 3 5 1 4 14 12 12 12 7 13 4 9 13
+  [D] done in 32.8 s: 2567/2849 ops succeeded, 2873 requests at the dependency (2873 sent), 138 failed together at the restart, max wake-up lag 9.2 ms
+
+====================================================================================================
+E03-B Correlated failure and recovery pressure: same clients, same freeze and restart, 4 client strategies
+====================================================================================================
+Outcome                           Ops  Success  affected      p95      p99  Recovery
+----------------------------------------------------------------------------------------------------
+A  immediate retry (UNSAFE)      2848    90.1%     63.6%   138 ms  1217 ms       2 s
+B  backoff 200/400/800 ms        2708    93.4%     71.9%  1492 ms  2605 ms       2 s
+C  backoff + full jitter         2776    92.9%     71.9%   896 ms  1859 ms       2 s
+D  C + retry budget              2849    90.1%     63.6%   133 ms  1200 ms       2 s
+
+Load at the dependency         Requests  Ampl.  Retries  Denied  10-17 s  Peak/s Peak/100ms  Active*
+----------------------------------------------------------------------------------------------------
+A  immediate retry (UNSAFE)        3697  1.30x      849       0     1484     631        463       22
+B  backoff 200/400/800 ms          3308  1.22x      600       0     1087     403        157       22
+C  backoff + full jitter           3426  1.23x      650       0     1209     559        105       25
+D  C + retry budget                2873  1.01x       24     282      658     120         18       19
+----------------------------------------------------------------------------------------------------
+200 clients, closed loop, think 1-3 s (about 100 ops/s), 30 s, seed 42. Dependency 250 req/s (10 x 40 ms), queue 100.
+Freeze 8.5-10.0 s, restart at 10.0 s fails every request inside, outage until 12.0 s, cold start until 17.0 s: 125 req/s (80 ms).
+All: 4 attempts max, 2 s each, 5 s per op. D: retry budget 0.1 token per new op, at most 10, shared.
+affected: success of ops started 8.5-17.0 s. Recovery: s after the restart second until per-second success >= 95% for 3 s.
+Requests: received by the dependency; Ampl.: per logical op; 10-17 s: requests from the restart to the end of the cold start;
+Peak/s, Peak/100ms: highest request count in one bucket; Active*: peak requests inside the restarted dependency.
+
+Wrote results/e03-b/summary.json and results/e03-b/timeseries.json.
+One run on one machine: compare strategies within a run; ./repeat-e03.sh repeats both scenarios over several seeds.

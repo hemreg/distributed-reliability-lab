@@ -6,7 +6,7 @@
 
 Bu depo, [emregorgulu.com](https://emregorgulu.com) üzerindeki *Dağıtık Sistemlerde Güvenilirlik* yazı dizisinin uygulama alanıdır. Amaç belirli bir teknoloji yığınını savunmak değil; arızaları yeniden üretmek, sonuçlarını gözlemlemek ve mimari önlemleri karşılaştırmaktır.
 
-> **Proje durumu:** E01 (Lost Event) çalıştırılabilir durumda. Deney betiği ve otomatik testleri çalıştırıldı; ayrıntılar için [experiments/transactional-outbox](experiments/transactional-outbox/README.tr.md). E02 ve E03 tanımlandı ancak henüz geliştirilmedi.
+> **Proje durumu:** E01 (Lost Event) ve E03 (Retry Storm) çalıştırılabilir durumda. Deneyleri ve otomatik testleri çalıştırıldı; ayrıntılar için [experiments/transactional-outbox](experiments/transactional-outbox/README.tr.md) ve [experiments/retry-resilience](experiments/retry-resilience/README.tr.md). E02 tanımlandı ancak henüz geliştirilmedi.
 
 ## Yanıt aradığımız sorular
 
@@ -21,7 +21,7 @@ Bu depo, [emregorgulu.com](https://emregorgulu.com) üzerindeki *Dağıtık Sist
 | --- | --- | --- | --- |
 | **E01 Lost Event** | Veritabanı commit'inden sonra, broker yayımından önce çökme | Naif çift yazma ile transactional outbox'ı karşılaştırmak | [Çalıştırılabilir](experiments/transactional-outbox/README.tr.md) |
 | **E02 Duplicate Delivery** | Broker onayından sonra, outbox durum güncellemesinden önce çökme | En az bir kez yayımı ve tüketici deduplikasyonunu gözlemlemek | Planlandı |
-| **E03 Retry Storm** | Gecikme, geçici hata ve aşırı yük oluşturma | Anlık tekrarlarla sınırlı backoff ve jitter stratejilerini karşılaştırmak | Planlandı |
+| **E03 Retry Storm** | E03-A: bir süre boyunca gecikme ve rastgele geçici hatalar; E03-B: çok sayıda istemciyi aynı anda hataya düşüren donma ve yeniden başlatma | Anında yeniden denemeyi sınırlı backoff, jitter ve retry bütçesiyle karşılaştırmak | [Çalıştırılabilir](experiments/retry-resilience/README.tr.md) |
 
 Arıza noktaları, değişmezler ve kabul ölçütleri için [deney tanımlarına](docs/experiments.tr.md) bakabilirsiniz.
 
@@ -30,11 +30,14 @@ Arıza noktaları, değişmezler ve kabul ölçütleri için [deney tanımların
 Çalıştırılabilir her deney kendi klasöründen tek komutla başlar; yalnızca Docker (Compose v2) gerekir:
 
 ```bash
-cd experiments/transactional-outbox
+cd experiments/transactional-outbox    # E01: iki yazma yolunu başlatır; çökme adımlarını README anlatır
+docker compose up --build
+
+cd experiments/retry-resilience        # E03: E03-A ve E03-B senaryolarını çalıştırır (~4-5 dk), tabloları yazdırır ve durur
 docker compose up --build
 ```
 
-Gönderilecek istekler, enjekte edilecek arıza ve sonucun nasıl okunacağı deneyin README dosyasında adım adım anlatılıyor.
+Enjekte edilen arıza, neyin ölçüldüğü ve sonucun nasıl okunacağı her deneyin README dosyasında anlatılıyor. Temizlemek için `docker compose down` (E01'de verileri de silen `docker compose down -v`) kullanın.
 
 ## Teknoloji yığını
 
@@ -51,7 +54,8 @@ Bunlar yalnızca uygulama tercihleridir. İncelediğimiz güvenilirlik ilkeleri 
 ```text
 distributed-reliability-lab/
 ├── experiments/
-│   └── transactional-outbox/   # E01 Lost Event: .NET servisi, deney betiği, xUnit testleri
+│   ├── transactional-outbox/   # E01 Lost Event: .NET servisi, deney betiği, xUnit testleri
+│   └── retry-resilience/       # E03 Retry Storm (E03-A, E03-B): simüle bağımlı servis, yük üretici, xUnit testleri
 ├── infrastructure/
 │   └── compose.yaml            # yerel deneyler için ortak PostgreSQL + RabbitMQ
 ├── docs/
@@ -61,7 +65,7 @@ distributed-reliability-lab/
 └── README.tr.md
 ```
 
-`experiments/idempotency/` ve `experiments/retry-resilience/` planlanıyor. Mevcut klasörler gibi bunları da boş iskeletler olarak değil, çalıştırılabilir kodlarıyla birlikte ekleyeceğiz.
+`experiments/idempotency/` (E02) planlanıyor. Mevcut klasörler gibi onu da boş bir iskelet olarak değil, çalıştırılabilir koduyla birlikte ekleyeceğiz.
 
 ## Yaklaşımımız
 
@@ -75,7 +79,7 @@ distributed-reliability-lab/
 
 - Dağıtık Sistemlerde Idempotency — aynı mantıksal isteğin tekrarlı etkileri.
 - Transactional Outbox — olay yayımı niyetinin kalıcı hale getirilmesi.
-- Retry, Timeout ve Backoff — güvenli yeniden deneme üzerine planlanan yazı.
+- Retry, Timeout ve Backoff — güvenli yeniden deneme üzerine hazırlanan yazı; kanıtlarını E03 sağlıyor.
 
 TR/EN makalelerin doğrulanmış bağlantılarını daha sonra ekleyeceğiz.
 

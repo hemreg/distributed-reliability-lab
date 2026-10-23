@@ -1,0 +1,110 @@
+# E03 Retry Storm. LOCAL LAB ONLY.
+#
+#   docker compose up --build    # from this directory: both scenarios in one command
+#   docker compose down          # afterwards: removes the stopped containers and the network
+#
+# `up` builds the image (one Dockerfile, tagged once per service) and starts two containers:
+#   dependency  simulated service with finite capacity; per measured run it arms one failure:
+#               E03-A a 10 s window of higher latency and random 503s, E03-B a freeze and a restart
+#               (JSON logs: `docker compose logs dependency`; not attached, to keep the summary readable)
+#   loadgen     runs the scenarios in E03_SCENARIOS one after the other:
+#                 E03-A  transient failure under independent arrivals: strategies A (immediate retry,
+#                        UNSAFE baseline), B (exponential backoff), C (backoff + full jitter + limits)
+#                 E03-B  correlated failure and recovery pressure: A, B, C and D (C + retry budget)
+#               prints each scenario's tables, writes results/e03-a/ and results/e03-b/
+#               (summary.json, timeseries.json, console.txt), then stops the dependency.
+#               `up` returns when both containers have exited (about 4-5 minutes).
+#
+# Every experiment parameter is below and can be overridden from the shell,
+# e.g. `E03_SEED=7 docker compose up --build` or `E03_SCENARIOS=b docker compose up --build`.
+# README.md explains each value. Several seeds: ./repeat-e03.sh.
+#
+# Tests: ./test-e03.sh (or `docker compose run --rm --build tests`).
+name: drlab-e03
+
+x-e03-image: &e03-image
+  build:
+    context: .
+    target: runtime
+  init: true
+  restart: "no"
+
+x-e03-parameters: &e03-parameters
+  # Shared by both programs and both scenarios.
+  E03_SEED: ${E03_SEED:-42}
+  E03_SCENARIOS: ${E03_SCENARIOS:-a,b}               # a = E03-A, b = E03-B, run in this order
+  E03_WARMUP_S: ${E03_WARMUP_S:-2}                   # unmeasured warm-up per strategy, no failure
+  E03_ATTEMPT_LOG: ${E03_ATTEMPT_LOG:-false}         # true: also write results/e03-x/attempts.jsonl (one line per attempt)
+  # Dependency capacity (both scenarios): capacity = workers / service time.
+  E03_WORKERS: ${E03_WORKERS:-10}
+  E03_SERVICE_TIME_MS: ${E03_SERVICE_TIME_MS:-40}    # 10 / 40 ms = 250 req/s
+  E03_QUEUE_LIMIT: ${E03_QUEUE_LIMIT:-100}           # waiting requests beyond the workers; more -> 503 at once
+
+  # ---- E03-A: transient failure under independent arrivals (unchanged) ----
+  # Workload (load generator).
+  E03_RATE: ${E03_RATE:-100}                         # logical operations per second, open-loop Poisson
+  E03_DURATION_S: ${E03_DURATION_S:-30}              # measured run per strategy
+  E03_STRATEGIES: ${E03_STRATEGIES:-A,B,C}
+  E03_C_DEADLINE_MS: ${E03_C_DEADLINE_MS:-5000}      # strategy C only: total time per logical operation
+  # Failure window, seconds since the start of each measured run.
+  E03_FAILURE_START_S: ${E03_FAILURE_START_S:-10}
+  E03_FAILURE_END_S: ${E03_FAILURE_END_S:-20}
+  E03_FAILURE_SERVICE_TIME_MS: ${E03_FAILURE_SERVICE_TIME_MS:-80}  # 10 / 80 ms = 125 req/s
+  E03_FAILURE_ERROR_RATE: ${E03_FAILURE_ERROR_RATE:-0.5}          # share of served requests answered 503
+
+  # ---- E03-B: correlated failure and recovery pressure ----
+  # Workload: a fixed population of clients, closed loop (one operation at a time, then think).
+  E03B_CLIENTS: ${E03B_CLIENTS:-200}
+  E03B_THINK_MIN_MS: ${E03B_THINK_MIN_MS:-1000}      # think time uniform in [min, max]:
+  E03B_THINK_MAX_MS: ${E03B_THINK_MAX_MS:-3000}      #   200 clients / 2 s = about 100 ops/s, as in E03-A
+  E03B_DURATION_S: ${E03B_DURATION_S:-30}            # no new operations after this; then drain
+  E03B_STRATEGIES: ${E03B_STRATEGIES:-A,B,C,D}
+  E03B_DEADLINE_MS: ${E03B_DEADLINE_MS:-5000}        # total time per logical operation, EVERY strategy
+  E03B_BUDGET_RATIO: ${E03B_BUDGET_RATIO:-0.1}       # strategy D: retry tokens per new operation (~10% retries)
+  E03B_BUDGET_MAX_TOKENS: ${E03B_BUDGET_MAX_TOKENS:-10}  # strategy D: bucket size and initial fill, shared by all clients
+  # Failure timeline, ms since the start of each measured run.
+  E03B_RESTART_MS: ${E03B_RESTART_MS:-10000}         # the restart: every request inside fails with 503 at this instant
+  E03B_FREEZE_MS: ${E03B_FREEZE_MS:-1500}            # before it the process hangs (8.5-10 s): requests pile up, held;
+                                                     #   keep it below the 2 s attempt timeout
+  E03B_OUTAGE_MS: ${E03B_OUTAGE_MS:-0}               # after it: everything refused (503) for this long
+  E03B_COLD_MS: ${E03B_COLD_MS:-5000}                # then a cold start (10-15 s) ...
+  E03B_COLD_SERVICE_TIME_MS: ${E03B_COLD_SERVICE_TIME_MS:-80}  # ... with 10 / 80 ms = 125 req/s
+
+services:
+  dependency:
+    <<: *e03-image
+    # One tag per service: two services sharing a tag race while both build it ("already exists").
+    image: drlab-e03-dependency:local
+    entrypoint: ["dotnet", "/app/dependency/Dependency.dll"]
+    environment:
+      <<: *e03-parameters
+    ports:
+      # Loopback only, for curl http://127.0.0.1:18490/admin/stats while a run is in progress.
+      - "127.0.0.1:${DRLAB_E03_DEPENDENCY_PORT:-18490}:8080"
+    attach: false
+
+  loadgen:
+    <<: *e03-image
+    image: drlab-e03-loadgen:local
+    entrypoint: ["dotnet", "/app/loadgen/LoadGenerator.dll"]
+    environment:
+      <<: *e03-parameters
+      E03_DEPENDENCY_URL: http://dependency:8080
+      # Inside the container; ./repeat-e03.sh points it at /results/repeat/seed-N.
+      E03_RESULTS_DIR: ${E03_RESULTS_DIR:-/results}
+    volumes:
+      - ./results:/results
+    # Root only so it can write into the bind-mounted results/ on Linux hosts, where the
+    # directory belongs to your host user (Docker Desktop on macOS/Windows does not need this).
+    # The files stay deletable by you because results/ is your directory.
+    user: root
+    depends_on:
+      - dependency
+
+  # ---- Tests (./test-e03.sh) --------------------------------------------------------------
+  tests:
+    profiles: [test]
+    build:
+      context: .
+      target: test
+    image: drlab-e03-tests:local

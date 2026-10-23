@@ -6,7 +6,7 @@
 
 This repository accompanies the *Reliability in Distributed Systems* article series at [emregorgulu.com](https://emregorgulu.com). The objective is not to promote a stack: it is to reproduce failures, observe their consequences, and evaluate architectural countermeasures.
 
-> **Project status:** E01 (Lost Event) is runnable. Its scripted experiment and automated tests have been executed; see [experiments/transactional-outbox](experiments/transactional-outbox/README.md). E02 and E03 are specified but not yet implemented.
+> **Project status:** E01 (Lost Event) and E03 (Retry Storm) are runnable. Their experiments and automated tests have been executed; see [experiments/transactional-outbox](experiments/transactional-outbox/README.md) and [experiments/retry-resilience](experiments/retry-resilience/README.md). E02 is specified but not yet implemented.
 
 ## Research questions
 
@@ -21,7 +21,7 @@ This repository accompanies the *Reliability in Distributed Systems* article ser
 | --- | --- | --- | --- |
 | **E01 Lost Event** | Crash after database commit, before broker publish | Compare naïve dual-write with transactional outbox | [Runnable](experiments/transactional-outbox/README.md) |
 | **E02 Duplicate Delivery** | Crash after broker ack, before outbox status update | Observe at-least-once publication and consumer deduplication | Planned |
-| **E03 Retry Storm** | Induce overload, latency and transient errors | Compare immediate retries with bounded backoff and jitter | Planned |
+| **E03 Retry Storm** | E03-A: a window of latency and random transient errors; E03-B: a freeze and restart that fails many clients at the same instant | Compare immediate retries, bounded backoff, jitter and a retry budget | [Runnable](experiments/retry-resilience/README.md) |
 
 Read the [experiment specifications](docs/experiments.md) for invariants and acceptance criteria.
 
@@ -30,11 +30,14 @@ Read the [experiment specifications](docs/experiments.md) for invariants and acc
 Each runnable experiment starts with a single command from its own directory; only Docker (Compose v2) is needed:
 
 ```bash
-cd experiments/transactional-outbox
+cd experiments/transactional-outbox    # E01: starts both write paths; the README walks you through the crash
+docker compose up --build
+
+cd experiments/retry-resilience        # E03: runs scenarios E03-A and E03-B (~4-5 min), prints the tables, then stops
 docker compose up --build
 ```
 
-The experiment's README walks through the requests to send, the failure to inject and how to read the result.
+Each experiment's README explains the failure that is injected, what is measured and how to read the result. Clean up with `docker compose down` (E01: `docker compose down -v`, which also removes its data).
 
 ## Stack
 
@@ -51,7 +54,8 @@ The stack is an implementation choice, not the subject of the research. Reliabil
 ```text
 distributed-reliability-lab/
 ├── experiments/
-│   └── transactional-outbox/   # E01 Lost Event: .NET service, scripted run, xUnit tests
+│   ├── transactional-outbox/   # E01 Lost Event: .NET service, scripted run, xUnit tests
+│   └── retry-resilience/       # E03 Retry Storm (E03-A, E03-B): simulated dependency, load generator, xUnit tests
 ├── infrastructure/
 │   └── compose.yaml            # shared PostgreSQL + RabbitMQ for local experiments
 ├── docs/
@@ -61,7 +65,7 @@ distributed-reliability-lab/
 └── README.tr.md
 ```
 
-`experiments/idempotency/` and `experiments/retry-resilience/` are planned. Like the existing directories, they will be added together with runnable code, not as empty placeholders.
+`experiments/idempotency/` (E02) is planned. Like the existing directories, it will be added together with runnable code, not as an empty placeholder.
 
 ## Principles
 
@@ -75,7 +79,7 @@ distributed-reliability-lab/
 
 - Idempotency in Distributed Systems — duplicate logical requests and business effects.
 - Transactional Outbox — making event publication intent durable.
-- Retry, Timeout, and Backoff — planned follow-up on safe retries.
+- Retry, Timeout, and Backoff — upcoming article on safe retries; E03 provides its evidence.
 
 Links to the individual bilingual articles will be added when verified.
 

@@ -137,16 +137,16 @@ wait_for_phase() { # phase: wait until the workorders logs contain it
 teardown() {
   if [[ "$KEEP" == 1 ]]; then
     note "KEEP=1: stack left running. API $API, RabbitMQ UI $MGMT (lab/lab)."
-    note "Tear down with: docker compose -f $HERE/compose.yaml down -v"
+    note "Tear down with: docker compose -f $HERE/compose.yaml --profile script down -v"
   else
-    step "Teardown"; cmd "docker compose down -v"; "${COMPOSE[@]}" down -v --remove-orphans 2>&1 | sed 's/^/    /'
+    step "Teardown"; cmd "docker compose --profile script down -v"; "${COMPOSE[@]}" --profile script down -v --remove-orphans 2>&1 | sed 's/^/    /'
   fi
 }
 
 # ---- 0. clean environment -----------------------------------------------------------------
 section "E01 Lost Event  |  0. clean environment"
-cmd "docker compose down -v && docker compose build workorders && docker compose up -d --wait postgres rabbitmq"
-"${COMPOSE[@]}" down -v --remove-orphans >/dev/null 2>&1 || true
+cmd "docker compose --profile script down -v && docker compose build workorders && docker compose up -d --wait postgres rabbitmq"
+"${COMPOSE[@]}" --profile script down -v --remove-orphans >/dev/null 2>&1 || true
 "${COMPOSE[@]}" build -q workorders
 "${COMPOSE[@]}" up -d --wait postgres rabbitmq 2>&1 | sed 's/^/    /'
 trap teardown EXIT

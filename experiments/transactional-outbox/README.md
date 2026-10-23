@@ -119,7 +119,7 @@ From the repository root:
 # Keep the stack running afterwards (RabbitMQ UI at http://127.0.0.1:15682, lab/lab)
 KEEP=1 ./experiments/transactional-outbox/run-e01.sh
 # teardown when done
-docker compose -f experiments/transactional-outbox/compose.yaml down -v
+docker compose -f experiments/transactional-outbox/compose.yaml --profile script down -v
 
 # Acceptance tests (xUnit, in Docker, against the compose PostgreSQL/RabbitMQ), then teardown
 ./experiments/transactional-outbox/test-e01.sh
@@ -146,7 +146,7 @@ $C exec postgres psql -U lab -d lab -c 'SELECT * FROM work_orders'
 $C exec postgres psql -U lab -d lab -c 'SELECT operation_id, event_id, published_at FROM outbox_messages'
 $C exec rabbitmq rabbitmqctl list_queues name messages
 $C logs --no-log-prefix workorders | jq -c 'select(.phase) | {ts, phase, operation_id, event_id}'
-$C down -v
+$C --profile script down -v
 ```
 
 ## Failure injection points
@@ -324,7 +324,7 @@ Trade-off: the transaction stays open while the publisher waits for broker confi
 
 ## Limitations (read before citing results)
 
-- **No exactly-once.** The outbox gives **at-least-once publication**. If the broker confirms a message and the process dies before marking the row, or a confirm is lost or times out, the same `event_id` is published again. Consumers must deduplicate; that is **E02**. This experiment does not inject that window. The tests accept duplicates in the broker (they compare *distinct* `message_id`s) and do not claim their absence.
+- **No exactly-once.** The outbox gives **at-least-once publication**. If the broker confirms a message and the process dies before marking the row, or a confirm is lost or times out, the same `event_id` is published again. Consumers must deduplicate; that is [**E02**](../idempotency/README.md). This experiment does not inject that window. The tests accept duplicates in the broker (they compare *distinct* `message_id`s) and do not claim their absence.
 - **External side effects are out of scope.** Only the database write and the broker publish are covered. E-mails, HTTP calls to third parties and the like are not protected by this transaction.
 - **Pending is not delivered.** In outbox mode `201` with `event_status: "pending"` means the publish *intent* is durable, not that anyone received the event. Publication latency depends on polling (500 ms) and backoff (up to 10 s).
 - **The client's uncertainty is not solved.** After a kill, the client sees a dropped connection and cannot know whether the work order was committed. A blind retry would create a second work order. That is an idempotency question, not an outbox one.
@@ -336,4 +336,4 @@ Trade-off: the transaction stays open while the publisher waits for broker confi
 
 ## Failure analysis (brief)
 
-The baseline loses the event because the decision to publish exists in two places that cannot commit together: PostgreSQL's durable state, and the process's volatile memory. A crash between them leaves no trace of the obligation, so there is nothing to retry. The outbox moves the obligation into the same atomic commit as the state change. After that point a crash, a stopped publisher or an unavailable broker only **delays** publication; recovery is a restart that finds pending rows. The cost is moving the failure from "lost" to "possibly duplicated", which is why E02 follows.
+The baseline loses the event because the decision to publish exists in two places that cannot commit together: PostgreSQL's durable state, and the process's volatile memory. A crash between them leaves no trace of the obligation, so there is nothing to retry. The outbox moves the obligation into the same atomic commit as the state change. After that point a crash, a stopped publisher or an unavailable broker only **delays** publication; recovery is a restart that finds pending rows. The cost is moving the failure from "lost" to "possibly duplicated", which is why [E02](../idempotency/README.md) follows.

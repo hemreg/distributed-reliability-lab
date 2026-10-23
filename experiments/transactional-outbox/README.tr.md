@@ -119,7 +119,7 @@ Depo kök dizininden:
 # Ortamı sonrasında açık bırakmak için (RabbitMQ arayüzü: http://127.0.0.1:15682, lab/lab)
 KEEP=1 ./experiments/transactional-outbox/run-e01.sh
 # işiniz bitince
-docker compose -f experiments/transactional-outbox/compose.yaml down -v
+docker compose -f experiments/transactional-outbox/compose.yaml --profile script down -v
 
 # Kabul testleri (xUnit, Docker içinde, compose PostgreSQL/RabbitMQ'ya karşı), ardından kaldırma
 ./experiments/transactional-outbox/test-e01.sh
@@ -146,7 +146,7 @@ $C exec postgres psql -U lab -d lab -c 'SELECT * FROM work_orders'
 $C exec postgres psql -U lab -d lab -c 'SELECT operation_id, event_id, published_at FROM outbox_messages'
 $C exec rabbitmq rabbitmqctl list_queues name messages
 $C logs --no-log-prefix workorders | jq -c 'select(.phase) | {ts, phase, operation_id, event_id}'
-$C down -v
+$C --profile script down -v
 ```
 
 ## Arıza enjeksiyon noktaları
@@ -324,7 +324,7 @@ Testlerin gerçekten ayırt edici olduğunu doğrulamak için paket, kasıtlı o
 
 ## Sınırlamalar (sonuçları alıntılamadan önce okuyun)
 
-- **Exactly-once yok.** Outbox **en az bir kez yayım** sağlar. Broker bir mesajı onaylar ve süreç kaydı işaretlemeden ölürse, ya da onay kaybolur veya zaman aşımına uğrarsa, aynı `event_id` yeniden yayımlanır. Tüketicilerin deduplikasyon yapması gerekir; bu **E02**'nin konusudur. Bu deney o aralığa arıza enjekte etmez. Testler broker'daki tekrarları kabul eder (*farklı* `message_id` değerlerini karşılaştırır) ve tekrar olmadığını iddia etmez.
+- **Exactly-once yok.** Outbox **en az bir kez yayım** sağlar. Broker bir mesajı onaylar ve süreç kaydı işaretlemeden ölürse, ya da onay kaybolur veya zaman aşımına uğrarsa, aynı `event_id` yeniden yayımlanır. Tüketicilerin deduplikasyon yapması gerekir; bu [**E02**](../idempotency/README.tr.md)'nin konusudur. Bu deney o aralığa arıza enjekte etmez. Testler broker'daki tekrarları kabul eder (*farklı* `message_id` değerlerini karşılaştırır) ve tekrar olmadığını iddia etmez.
 - **Dış yan etkiler kapsam dışıdır.** Yalnızca veritabanı yazması ve broker'a yayım ele alınır. E-posta, üçüncü taraf HTTP çağrıları gibi etkiler bu transaction tarafından korunmaz.
 - **Beklemede olmak teslim edilmek değildir.** Outbox modunda `event_status: "pending"` ile dönen `201`, yayımlama *niyetinin* kalıcı olduğunu söyler; olayın birine ulaştığını söylemez. Yayım gecikmesi yoklama aralığına (500 ms) ve bekleme süresine (en fazla 10 sn) bağlıdır.
 - **İstemcinin belirsizliği çözülmez.** Sonlandırmadan sonra istemci kopan bir bağlantı görür ve iş emrinin commit edilip edilmediğini bilemez. Körlemesine bir yeniden deneme ikinci bir iş emri oluşturur. Bu bir idempotency sorusudur, outbox sorusu değil.
@@ -336,4 +336,4 @@ Testlerin gerçekten ayırt edici olduğunu doğrulamak için paket, kasıtlı o
 
 ## Kısa arıza analizi
 
-Başlangıç senaryosu olayı kaybeder, çünkü yayımlama kararı birlikte commit edilemeyen iki yerde yaşar: PostgreSQL'in kalıcı durumu ve sürecin geçici belleği. İkisinin arasındaki bir çökme, yükümlülüğün hiçbir izini bırakmaz; yeniden denenecek bir şey kalmaz. Outbox bu yükümlülüğü durum değişikliğiyle aynı atomik commit'e taşır. O noktadan sonra çökme, durdurulmuş publisher ya da erişilemeyen broker yayımı yalnızca **geciktirir**; toparlanma, bekleyen kayıtları bulan bir yeniden başlatmadır. Bedeli, arızanın "kaybolan olay"dan "tekrarlanabilen olay"a dönüşmesidir. E02 bu yüzden bir sonraki adım.
+Başlangıç senaryosu olayı kaybeder, çünkü yayımlama kararı birlikte commit edilemeyen iki yerde yaşar: PostgreSQL'in kalıcı durumu ve sürecin geçici belleği. İkisinin arasındaki bir çökme, yükümlülüğün hiçbir izini bırakmaz; yeniden denenecek bir şey kalmaz. Outbox bu yükümlülüğü durum değişikliğiyle aynı atomik commit'e taşır. O noktadan sonra çökme, durdurulmuş publisher ya da erişilemeyen broker yayımı yalnızca **geciktirir**; toparlanma, bekleyen kayıtları bulan bir yeniden başlatmadır. Bedeli, arızanın "kaybolan olay"dan "tekrarlanabilen olay"a dönüşmesidir. [E02](../idempotency/README.tr.md) bu yüzden bir sonraki adım.
